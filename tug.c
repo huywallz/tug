@@ -3848,6 +3848,44 @@ void tug_err(tug_Task* T, const char* fmt, ...) {
 	T->state = TASK_ERROR;
 }
 
+static void append_str(char** buf, size_t* len, const char* fmt, ...) {
+	va_list args;
+	va_start(args, fmt);
+
+	char tmp[2048];
+	int n = vsnprintf(tmp, sizeof(tmp), fmt, args);
+	va_end(args);
+
+	if (n < 0) return;
+
+	*buf = realloc(*buf, *len + n + 1);
+	memcpy(*buf + *len, tmp, n);
+	*len += n;
+	(*buf)[*len] = '\0';
+}
+
+char* tug_geterr(tug_Task* T) {
+	char* buf = NULL;
+	size_t len = 0;
+	
+	if (T->info != NULL) {
+		append_str(&buf, &len, "stack traceback:\n");
+		Info* info = T->info;
+		while (info) {
+			if (streq(info->src, "[C]")) {
+				append_str(&buf, &len, "\t%s: in %s\n", info->src, info->name);
+			} else {
+				append_str(&buf, &len, "\t%s:%lu: in %s\n", info->src, info->ln, info->name);
+			}
+			info = info->next;
+		}
+	}
+
+	append_str(&buf, &len, "error: %s", T->msg);
+
+	return buf;
+}
+
 tug_Task* tug_task(const char* src, const char* code, char* errmsg) {
 	Bytecode* bc = gen_bc(src, code, emsg);
 	if (!bc) return NULL;

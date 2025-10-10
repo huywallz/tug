@@ -64,6 +64,7 @@ tug_Object* tug_getarg(tug_Task* T, size_t idx);
 
 void tug_ret(tug_Task* T, tug_Object* obj);
 void tug_err(tug_Task* T, const char* fmt, ...);
+char* tug_geterr(tug_Task* T);
 
 tug_Task* tug_task(const char* src, const char* code, char* errmsg);
 void tug_resume(tug_Task* T);
