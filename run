@@ -1,0 +1,2 @@
+gcc tug.c -o tug -lm -g -fsanitize=address
+./tug
