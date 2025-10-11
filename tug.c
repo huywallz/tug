@@ -3757,14 +3757,14 @@ tug_Object* tug_tuplepop(tug_Object* tuple) {
 	return obj ? obj : obj_nil;
 }
 
-tug_ObjectType tug_gettype(tug_Object* obj) {
+tug_Type tug_gettype(tug_Object* obj) {
 	switch (obj->kind) {
 		case STR: return TUG_STR;
 		case NUM: return TUG_NUM;
 		case TRUE: return TUG_TRUE;
 		case FALSE: return TUG_FALSE;
 		case NIL: return TUG_NIL;
-		case FUNC: return obj->func.cfunc ? TUG_CFUNC : TUG_FUNC;
+		case FUNC: TUG_FUNC;
 		case TABLE: return TUG_TABLE;
 		case TUPLE: return TUG_TUPLE;
 		default: return TUG_UNKNOWN;

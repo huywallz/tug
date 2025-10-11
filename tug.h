@@ -12,10 +12,9 @@ typedef enum {
 	TUG_NIL,
 	TUG_FUNC,
 	TUG_TABLE,
-	TUG_CFUNC,
 	TUG_TUPLE,
 	TUG_UNKNOWN,
-} tug_ObjectType;
+} tug_Type;
 
 typedef enum {
 	TUG_NEW,
@@ -39,7 +38,7 @@ tug_Object* tug_table(void);
 typedef void(*tug_CFunc)(tug_Task*);
 tug_Object* tug_cfunc(const char* name, tug_CFunc func);
 
-tug_ObjectType tug_gettype(tug_Object* obj);
+tug_Type tug_gettype(tug_Object* obj);
 
 const char* tug_getstr(tug_Object* obj);
 double tug_getnum(tug_Object* obj);
