@@ -61,6 +61,7 @@ int tug_hasglobal(tug_Task* T, const char* name);
 
 size_t tug_getargc(tug_Task* T);
 tug_Object* tug_getarg(tug_Task* T, size_t idx);
+int tug_hasarg(tug_Task* T, size_t idx);
 
 void tug_ret(tug_Task* T, tug_Object* obj);
 void tug_err(tug_Task* T, const char* fmt, ...);

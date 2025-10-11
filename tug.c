@@ -3836,6 +3836,14 @@ tug_Object* tug_getarg(tug_Task* T, size_t idx) {
 	return get_arg(T, idx);
 }
 
+int tug_hasarg(tug_Task* T, size_t idx) {
+	Frame* frame = T->frame;
+	if (frame->args == NULL) return 0;
+	if (idx >= frame->args->count) return 0;
+
+	return 1;
+}
+
 void tug_ret(tug_Task* T, tug_Object* obj) {
 	T->frame->ret = obj;
 }
