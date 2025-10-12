@@ -6,4 +6,6 @@ mt = {__add = add}
 t1 = setmetatable({num = 69}, mt)
 t2 = setmetatable({num = 134}, mt)
 
+
+
 print(t1 + t2)
