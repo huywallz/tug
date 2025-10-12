@@ -1550,10 +1550,10 @@ static void bc_free(Bytecode* bc) {
 }
 
 static void ensure(size_t extra) {
-	if (main_bc->size + extra > main_bc->capacity) {
+	while (main_bc->size + extra > main_bc->capacity) {
 		main_bc->capacity *= 2;
-		main_bc->data = gc_realloc(main_bc->data, main_bc->capacity);
 	}
+	main_bc->data = gc_realloc(main_bc->data, main_bc->capacity);
 }
 
 static void emit_byte(uint8_t value) {
@@ -2097,6 +2097,7 @@ static void compile_node(Node* node) {
 
 			push_loop(main_bc->size);
 			emit_byte(OP_NEXT);
+			emit_addr(nfor->ln);
 			Vector* names = nfor->names;
 			emit_addr(vec_count(names));
 			vec_iter(names, emit_str);
@@ -2929,14 +2930,9 @@ static Object* pop_tvalue(Task* task) {
 	Vector* stack = task->stack;
 	Object* obj;
 
-	if (frame->base >= stack->count) {
-		obj = obj_nil;
-	} else {
-		obj = vec_pop(stack);
-		obj = obj ? obj : obj_nil;
-	}
-
-	return obj;
+	if (frame->base >= stack->count) return obj_nil;
+	
+	return vec_pop(stack);
 }
 
 static Object* peek_value(Task* task) {
@@ -2988,9 +2984,9 @@ static Object* get_arg(Task* task, size_t idx) {
 
 jmp_buf cfunc_jmp_buf;
 
-void call_obj(Task* task, Object* obj, Vector* args, int* err) {
+void call_obj(Task* task, Object* obj, Vector* args, int f) {
 	if (obj->kind != FUNC) {
-		if (err) *err = 1;
+		if (f) vec_free(args);
 		assign_err(task, "unable to call '%s'", obj_type(obj));
 		return;
 	}
@@ -3079,10 +3075,7 @@ static void task_exec(Task* task) {
 						vec_push(args, o1);
 						vec_push(args, o2);
 
-						int err = 0;
-						call_obj(task, func, args, &err);
-						if (err) vec_free(args);
-						
+						call_obj(task, func, args, 1);
 						break;
 					}
 				} else if (op == OP_EQ || op == OP_NE) {
@@ -3249,15 +3242,36 @@ static void task_exec(Task* task) {
 				}
 				
 				Object* obj = pop_value(task);
-				if (op == OP_NOT) {
+
+				int err = 0;
+				if (obj->kind == TABLE && obj->metatable != obj_nil) {
+					Table* mtable = obj->metatable->table;
+					Object* func;
+					if (op == OP_NOT) func = table_get(mtable, new_str(gc_strdup("__truth")));
+					else if (op == OP_POS) func = table_get(mtable, new_str(gc_strdup("__pos")));
+					else func = table_get(mtable, new_str(gc_strdup("__neg")));
+
+					if (func != obj_nil) {
+						Vector* args = vec_serve(1);
+						vec_push(args, obj);
+
+						call_obj(task, obj, args, 1);
+						if (task->state != TASK_ERROR) task_exec(task);
+
+						if (op == OP_NOT) {
+							Object* obj = pop_value(task);
+							push_obj(task, obj_truth(!obj_check(obj)));
+						}
+					} else err = 1;
+				} else if (op == OP_NOT) {
 					push_obj(task, obj_truth(!obj_check(obj)));
 				} else {
 					if (obj->kind == NUM) {
 						push_num(task, op == OP_NEG ? -(obj->num) : obj->num);
-					} else {
-						assign_err(task, "unable to %s '%s'", op == OP_ADD ? "pos" : "neg", obj_type(obj));
-					}
+					} else err = 1;
 				}
+
+				if (err) assign_err(task, "unable to %s '%s'", op == OP_ADD ? "pos" : "neg", obj_type(obj));
 			} break;
 
 			case OP_JUMP: set_addr(task, read_addr(task)); break;
@@ -3310,9 +3324,7 @@ static void task_exec(Task* task) {
 				}
 
 				Object* obj = pop_value(task);
-				int err = 0;
-				call_obj(task, obj, args, &err);
-				if (err) vec_free(args);
+				call_obj(task, obj, args, 1);
 			} break;
 
 			case OP_TUPLE: {
@@ -3352,7 +3364,25 @@ static void task_exec(Task* task) {
 				}
 				
 				Table* table = obj->table;
-				table_set(table, key, value);
+				int meta = 0;
+				if (obj->metatable != obj_nil) {
+					Table* mtable = obj->metatable->table;
+					Object* func = table_get(mtable, new_str(gc_strdup("__set")));
+
+					if (func != obj_nil) {
+						Vector* args = vec_serve(3);
+						vec_push(args, obj);
+						vec_push(args, key);
+						vec_push(args, value);
+
+						call_obj(task, func, args, 1);
+						if (task->state != TASK_ERROR) task_exec(task);
+						pop_value(task);
+						meta = 1;
+					}
+				}
+
+				if (!meta) table_set(table, key, value);
 				
 				if (push) push_obj(task, obj);
 			} break;
@@ -3364,7 +3394,23 @@ static void task_exec(Task* task) {
 				
 				if (obj->kind == TABLE) {
 					Table* table = obj->table;
-					push_obj(task, table_get(table, key));
+					int meta = 0;
+
+					if (obj->metatable != obj_nil) {
+						Table* mtable = obj->metatable->table;
+						Object* func = table_get(mtable, new_str(gc_strdup("__set")));
+
+						if (func != obj_nil) {
+							Vector* args = vec_serve(3);
+							vec_push(args, obj);
+							vec_push(args, key);
+
+							call_obj(task, func, args, 1);
+							meta = 1;
+						}
+					}
+					
+					if (!meta) push_obj(task, table_get(table, key));
 				} else {
 					assign_err(task, "unable to get index '%s'", obj_type(obj));
 				}
@@ -3412,8 +3458,26 @@ static void task_exec(Task* task) {
 							Object* key = vec_get(obj_key, 1);
 
 							if (obj->kind == TABLE) {
-								Table* table = obj->table;
-								table_set(table, key, value);
+								int meta = 0;
+								if (obj->metatable != obj_nil) {
+									Table* mtable = obj->metatable->table;
+									Object* func = table_get(mtable, new_str(gc_strdup("__set")));
+
+									if (func != obj_nil) {
+										Vector* args = vec_serve(3);
+										vec_push(args, obj);
+										vec_push(args, key);
+										vec_push(args, value);
+
+										call_obj(task, func, args, 1);
+										if (task->state != TASK_ERROR) task_exec(task);
+										err = task->state == TASK_ERROR;
+										pop_value(task);
+										meta = 1;
+									}
+								}
+
+								if (!meta) table_set(obj->table, key, value);
 							} else {
 								assign_err(task, "unable to set index '%s'", obj_type(obj));
 								err = 1;
@@ -3434,6 +3498,18 @@ static void task_exec(Task* task) {
 			case OP_ITER: {
 				task->frame->ln = read_addr(task);
 				Object* obj = pop_value(task);
+				if (obj->kind == TABLE && obj->metatable != obj_nil) {
+					Table* mtable = obj->metatable->table;
+					Object* func = table_get(mtable, new_str(gc_strdup("__iter")));
+
+					if (func != obj_nil) {
+						Vector* args = vec_serve(1);
+						vec_push(args, obj);
+
+						call_obj(task, func, args, 1);
+						break;
+					}
+				}
 				Object* iter_obj = obj_iter(obj);
 				if (iter_obj == NULL) {
 					assign_err(task, "'%s' is not iterable", obj_type(obj));
@@ -3443,6 +3519,7 @@ static void task_exec(Task* task) {
 			} break;
 
 			case OP_NEXT: {
+				task->frame->ln = read_addr(task);
 				size_t count = read_addr(task);
 				Vector* names = vec_serve(count);
 				for (size_t i = 0; i < count; i++) {
@@ -3479,6 +3556,29 @@ static void task_exec(Task* task) {
 						}
 						iter_obj->iter.entry = iter_obj->iter.entry->next;
 						used = 2;
+					}
+				} else if (iter_obj->kind == TABLE && iter_obj->metatable != obj_nil) {
+					Table* mtable = iter_obj->metatable->table;
+					Object* func = table_get(mtable, new_str(gc_strdup("__next")));
+
+					if (func != obj_nil) {
+						Vector* args = vec_create(1);
+						vec_push(args, iter_obj);
+
+						call_obj(task, func, args, 1);
+						printf("start\n");
+						if (task->state != TASK_ERROR) task_exec(task);
+						printf("end\n");
+						
+						Object* ret = pop_tvalue(task);
+						if (ret->kind == TUPLE) {
+							done = !obj_check(vec_get(ret->tuple, 0));
+							if (!done) for (size_t i = 0; i < vec_count(names); i++) {
+								size_t j = i + 1;
+								if (j >= vec_count(ret->tuple)) break;
+								set_var(task, (const char*)vec_get(names, i), vec_get(ret->tuple, j));
+							}
+						} else done = obj_check(ret);
 					}
 				} else {
 					assign_err(task, "iteration fatal error");
@@ -3911,9 +4011,7 @@ void tug_calls(tug_Task* T, tug_Object* func, size_t n, ...) {
 		vec_push(fargs, va_arg(args, tug_Object*));
 	}
 
-	int err = 0;
-	call_obj(T, func, fargs, &err);
-	if (err) vec_free(fargs);
+	call_obj(T, func, fargs, 1);
 	if (T->state != TASK_ERROR) task_exec(T);
 }
 
@@ -3926,7 +4024,7 @@ void tug_call(tug_Task* T, tug_Object* func, tug_Object* arg) {
 		vec_push(args, arg);
 	}
 
-	call_obj(T, func, args, NULL);
+	call_obj(T, func, args, 0);
 	if (T->state != TASK_ERROR) task_exec(T);
 }
 

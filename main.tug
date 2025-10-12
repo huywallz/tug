@@ -1,11 +1,28 @@
-func add(a, b)
-    return a.num + b.num
+func range(start, stop, step)
+    if stop == nil then
+        stop = start
+        start = 0
+    end
+    
+    mt := {}
+    t := setmetatable({}, mt)
+
+    func iter()
+        return t
+    end
+    mt.__iter = iter
+
+    func next()
+        if (step > 0 and start >= stop) or (step < 0 and start <= stop) then return false end
+        value := start
+        start = start + step
+        return true, value
+    end
+    mt.__next = next
+
+    return t
 end
 
-mt = {__add = add}
-t1 = setmetatable({num = 69}, mt)
-t2 = setmetatable({num = 134}, mt)
-
-
-
-print(t1 + t2)
+for i in range(10) do
+    print(i)
+end
