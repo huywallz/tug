@@ -945,6 +945,7 @@ static int pval(void) {
 				if (lpeektk(&kind)) goto __terr;
 				
 				if (kind == ASSIGN) {
+					ltok();
 					if (ltok() || pexpr()) goto __terr;
 					vec_push(values, node);
 					node = NULL;
@@ -970,7 +971,7 @@ static int pval(void) {
 				goto __terr;
 			}
 		}
-		
+
 		if (tkind != RCURLY) {
 			perr("expected '}'");
 			goto __terr;
@@ -1746,7 +1747,13 @@ static void emit_closure(int i) {
 static void compile_node(Node* node);
 static void compile_block(NodeBlock* block) {
 	for (size_t i = 0; i < block->count; i++) {
-		compile_node(block->nodes[i]);
+		Node* node = block->nodes[i];
+		compile_node(node);
+
+		if (node_isexpr(node)) {
+			emit_byte(OP_POP);
+			emit_addr(1);
+		}
 	}
 }
 
@@ -2273,7 +2280,7 @@ static Object* obj_table(struct Table* table) {
 	
 	Object* obj = obj_create(TABLE);
 	obj->table = table;
-	obj->metatable = NULL;
+	obj->metatable = obj_nil;
 	
 	return obj;
 }
@@ -2981,10 +2988,45 @@ static Object* get_arg(Task* task, size_t idx) {
 
 jmp_buf cfunc_jmp_buf;
 
-static void gc_run(void);
-static void task_run(Task* task) {
-	task->state = TASK_RUNNING;
+void call_obj(Task* task, Object* obj, Vector* args, int* err) {
+	if (obj->kind != FUNC) {
+		if (err) *err = 1;
+		assign_err(task, "unable to call '%s'", obj_type(obj));
+		return;
+	}
 	
+	Frame* new_frame = frame_create(obj->func.src, obj->func.name, obj->func.bc, vec_count(task->stack), args);
+	new_frame->next = task->frame;
+	task->frame = new_frame;
+	
+	if (!obj->func.cfunc) {
+		VarMap* func_map = obj->func.upper;
+		VarMap* func_env = varmap_create();
+		gc_collect_closure(func_env);
+		func_env->next = func_map;
+		vec_push(task->varmaps, func_env);
+		for (size_t i = 0; i < vec_count(args); i++) {
+			set_var(task, vec_get(obj->func.params, i), vec_get(args, i));
+		}
+	} else {
+		if (setjmp(cfunc_jmp_buf) == 0) {
+			obj->func.cfunc(task);
+		}
+		
+		if (task->state == TASK_RUNNING) {
+			push_obj(task, task->frame->ret);
+			
+			Frame* next_frame = task->frame->next;
+			frame_free(task->frame, NULL);
+			task->frame = next_frame;
+		}
+	}
+}
+
+static void gc_run(void);
+static void task_exec(Task* task) {
+	if (task->frame->bc == NULL) return;
+
 	while (1) {
 		uint8_t op = read_byte(task);
 
@@ -3014,7 +3056,37 @@ static void task_run(Task* task) {
 				Object* o2 = pop_value(task);
 				Object* o1 = pop_value(task);
 
-				if (op == OP_EQ || op == OP_NE) {
+				if (o1->kind == TABLE && o1->metatable->kind == TABLE) {
+					Table* mtable = o1->metatable->table;
+
+					Object* func = NULL;
+					switch (op) {
+						case OP_ADD: func = table_get(mtable, new_str(gc_strdup("__add"))); break;
+						case OP_SUB: func = table_get(mtable, new_str(gc_strdup("__sub"))); break;
+						case OP_MUL: func = table_get(mtable, new_str(gc_strdup("__mul"))); break;
+						case OP_DIV: func = table_get(mtable, new_str(gc_strdup("__div"))); break;
+						case OP_MOD: func = table_get(mtable, new_str(gc_strdup("__mod"))); break;
+						case OP_GT: func = table_get(mtable, new_str(gc_strdup("__gt"))); break;
+						case OP_LT: func = table_get(mtable, new_str(gc_strdup("__lt"))); break;
+						case OP_GE: func = table_get(mtable, new_str(gc_strdup("__ge"))); break;
+						case OP_LE: func = table_get(mtable, new_str(gc_strdup("__le"))); break;
+						case OP_EQ: func = table_get(mtable, new_str(gc_strdup("__eq"))); break;
+						case OP_NE: func = table_get(mtable, new_str(gc_strdup("__ne"))); break;
+					}
+
+					if (func != obj_nil) {
+						Vector* args = vec_serve(2);
+						vec_push(args, o1);
+						vec_push(args, o2);
+
+						int err = 0;
+						call_obj(task, func, args, &err);
+						if (err) vec_free(args);
+						
+						break;
+					}
+				} else if (op == OP_EQ || op == OP_NE) {
+
 					int res = obj_compare(o1, o2);
 					if (op == OP_NE) res = !res;
 					push_obj(task, obj_truth(res));
@@ -3108,7 +3180,8 @@ static void task_run(Task* task) {
 				if (task->frame == NULL) task->state = TASK_END;
 				
 				vec_pop(task->varmaps);
-			} break;
+				return;
+			}
 			
 			case OP_TRUE: push_obj(task, obj_true); break;
 			case OP_FALSE: push_obj(task, obj_false); break;
@@ -3235,40 +3308,11 @@ static void task_run(Task* task) {
 				for (size_t i = 0; i < arg_count; i++) {
 					vec_pushfirst(args, pop_value(task));
 				}
-				
+
 				Object* obj = pop_value(task);
-				if (obj->kind != FUNC) {
-					vec_free(args);
-					assign_err(task, "unable to call '%s'", obj_type(obj));
-					break;
-				}
-				
-				Frame* new_frame = frame_create(obj->func.src, obj->func.name, obj->func.bc, vec_count(task->stack), args);
-				new_frame->next = task->frame;
-				task->frame = new_frame;
-				
-				if (!obj->func.cfunc) {
-					VarMap* func_map = obj->func.upper;
-					VarMap* func_env = varmap_create();
-					gc_collect_closure(func_env);
-					func_env->next = func_map;
-					vec_push(task->varmaps, func_env);
-					for (size_t i = 0; i < arg_count; i++) {
-						set_var(task, vec_get(obj->func.params, i), vec_get(args, i));
-					}
-				} else {
-					if (setjmp(cfunc_jmp_buf) == 0) {
-						obj->func.cfunc(task);
-					}
-					
-					if (task->state == TASK_RUNNING) {
-						push_obj(task, task->frame->ret);
-						
-						Frame* next_frame = task->frame->next;
-						frame_free(task->frame, NULL);
-						task->frame = next_frame;
-					}
-				}
+				int err = 0;
+				call_obj(task, obj, args, &err);
+				if (err) vec_free(args);
 			} break;
 
 			case OP_TUPLE: {
@@ -3464,8 +3508,16 @@ static void task_run(Task* task) {
 		}
 
 		if (task->state != TASK_RUNNING) break;
-		
+
 		gc_run();
+	}
+}
+
+static void task_run(Task* task) {
+	task->state = TASK_RUNNING;
+	
+	while (task->state == TASK_RUNNING) {
+		task_exec(task);
 	}
 }
 
@@ -3789,6 +3841,14 @@ size_t tug_getlen(tug_Object* obj) {
 	return obj->kind == STR ? strlen(obj->str) : obj->table->count;
 }
 
+void tug_setmetatable(tug_Object* obj, tug_Object* metatable) {
+	obj->metatable = metatable;
+}
+
+tug_Object* tug_getmetatable(tug_Object* obj) {
+	return obj->metatable;
+}
+
 void tug_setvar(tug_Task* T, const char* name, tug_Object* value) {
 	VarMap* map = vec_peek(T->varmaps);
 	varmap_put(map, name, (Object*)value);
@@ -3842,7 +3902,35 @@ int tug_hasarg(tug_Task* T, size_t idx) {
 	return 1;
 }
 
-void tug_retmulti(tug_Task* T, size_t n, ...) {
+void tug_calls(tug_Task* T, tug_Object* func, size_t n, ...) {
+	va_list args;
+	va_start(args, n);
+
+	Vector* fargs = vec_serve(n);
+	for (size_t i = 0; i < n; i++) {
+		vec_push(fargs, va_arg(args, tug_Object*));
+	}
+
+	int err = 0;
+	call_obj(T, func, fargs, &err);
+	if (err) vec_free(fargs);
+	if (T->state != TASK_ERROR) task_exec(T);
+}
+
+void tug_call(tug_Task* T, tug_Object* func, tug_Object* arg) {
+	Vector* args;
+	if (arg->kind == TUPLE) {
+		args = arg->tuple;
+	} else {
+		args = vec_serve(1);
+		vec_push(args, arg);
+	}
+
+	call_obj(T, func, args, NULL);
+	if (T->state != TASK_ERROR) task_exec(T);
+}
+
+void tug_rets(tug_Task* T, size_t n, ...) {
 	Vector* stack = T->stack;
 	if (n == 0) {
 		T->frame->ret = obj_nil;
@@ -3922,7 +4010,7 @@ char* tug_geterr(tug_Task* T) {
 }
 
 tug_Task* tug_task(const char* src, const char* code, char* errmsg) {
-	Bytecode* bc = gen_bc(src, code, emsg);
+	Bytecode* bc = gen_bc(src, code, errmsg);
 	if (!bc) return NULL;
 	
 	tug_Task* task = task_create(src, bc);

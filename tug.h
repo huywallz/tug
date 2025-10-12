@@ -46,6 +46,8 @@ double tug_getnum(tug_Object* obj);
 void tug_setindex(tug_Object* obj, tug_Object* key, tug_Object* value);
 tug_Object* tug_getindex(tug_Object* obj, tug_Object* key);
 size_t tug_getlen(tug_Object* obj);
+void tug_setmetatable(tug_Object* obj, tug_Object* metatable);
+tug_Object* tug_getmetatable(tug_Object* obj);
 
 tug_Object* tug_tuple(void);
 void tug_tuplepush(tug_Object* tuple, tug_Object* obj);
@@ -63,7 +65,9 @@ size_t tug_getargc(tug_Task* T);
 tug_Object* tug_getarg(tug_Task* T, size_t idx);
 int tug_hasarg(tug_Task* T, size_t idx);
 
-void tug_retmulti(tug_Task* T, size_t n, ...);
+void tug_calls(tug_Task* T, tug_Object* func, size_t n, ...);
+void tug_call(tug_Task* T, tug_Object* func, tug_Object* arg);
+void tug_rets(tug_Task* T, size_t n, ...);
 void tug_ret(tug_Task* T, tug_Object* obj);
 void tug_err(tug_Task* T, const char* fmt, ...);
 char* tug_geterr(tug_Task* T);

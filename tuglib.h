@@ -180,10 +180,38 @@ void __tuglib_type(tug_Task* T) {
     tug_ret(T, tug_str(tuglib_typename(tug_gettype(obj))));
 }
 
+void __tuglib_setmetatable(tug_Task* T) {
+    tug_Object* table = tuglib_checktable(T, 0);
+    tug_Object* mtable = tuglib_checktable(T, 1);
+
+    tug_setmetatable(table, mtable);
+    tug_ret(T, table);
+}
+
+void __tuglib_getmetatable(tug_Task* T) {
+    tug_Object* table = tuglib_checktable(T, 0);
+    tug_Object* mtable = tug_getmetatable(table);
+
+    if (mtable == tug_nil) return;
+    tug_Object* obj = tug_getindex(mtable, tug_str("__metatable"));
+    if (obj == tug_nil) tug_ret(T, mtable);
+    else tug_ret(T, obj);
+}
+
+void __tuglib_test(tug_Task* T) {
+    tug_Object* obj = tuglib_checkfunc(T, 0);
+
+    tug_calls(T, obj, 0);
+}
+
 void tuglib_loadbuiltins(tug_Task* T) {
     tug_setglobal(T, "print", tug_cfunc("print", __tuglib_print));
     tug_setglobal(T, "tostr", tug_cfunc("tostr", __tuglib_tostr));
     tug_setglobal(T, "type", tug_cfunc("type", __tuglib_type));
+    tug_setglobal(T, "setmetatable", tug_cfunc("setmetatable", __tuglib_setmetatable));
+    tug_setglobal(T, "getmetatable", tug_cfunc("getmetatable", __tuglib_getmetatable));
+    
+    tug_setglobal(T, "test", tug_cfunc("test", __tuglib_test));
 }
 
 void tuglib_loadlibs(tug_Task* T) {

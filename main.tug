@@ -1,1 +1,9 @@
-print("Hello, World!", type(123))
+func add(a, b)
+    return a.num + b.num
+end
+
+mt = {__add = add}
+t1 = setmetatable({num = 69}, mt)
+t2 = setmetatable({num = 134}, mt)
+
+print(t1 + t2)
