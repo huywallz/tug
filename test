@@ -1,2 +1,2 @@
-gcc main.c -o main -L. -ltug -lm -s -O3
+gcc main.c -o main -L. -ltug -lm -g -fsanitize=address
 ./main

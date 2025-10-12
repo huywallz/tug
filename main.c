@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "tug.h"
+#include "tuglib.h"
 
 static char* read_file(const char* path) {
     FILE* file = fopen(path, "r");
@@ -29,6 +30,7 @@ int main() {
         printf("%s\n", errmsg);
         return 1;
     }
+    tuglib_loadlibs(task);
     tug_resume(task);
     
     if (tug_getstate(task) == TUG_ERROR) {

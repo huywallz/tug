@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <math.h>
 #include <unistd.h>
+#include <setjmp.h>
 
 #ifdef __ANDROID__
 #include <time.h>
@@ -2978,22 +2979,7 @@ static Object* get_arg(Task* task, size_t idx) {
 
 #define get_argc(__T) (((__T)->frame->args == NULL) ? 0 : vec_count((__T)->frame->args))
 
-static void ret_values(Task* task, size_t count, ...) {
-	va_list args;
-	va_start(args, count);
-
-	Vector* tuple = vec_serve(count);
-	for (size_t i = 0; i < count; i++) {
-		vec_push(tuple, va_arg(args, Object*));
-	}
-	Object* obj = gc_obj(obj_create(TUPLE));
-	obj->tuple = tuple;
-	vec_push(task->stack, obj);
-
-	va_end(args);
-}
-
-#define ret_nil(__T) ret_values((__T), 1, obj_nil)
+jmp_buf cfunc_jmp_buf;
 
 static void gc_run(void);
 static void task_run(Task* task) {
@@ -3247,7 +3233,7 @@ static void task_run(Task* task) {
 				
 				Vector* args = vec_serve(arg_count);
 				for (size_t i = 0; i < arg_count; i++) {
-					vec_push(args, pop_value(task));
+					vec_pushfirst(args, pop_value(task));
 				}
 				
 				Object* obj = pop_value(task);
@@ -3271,8 +3257,10 @@ static void task_run(Task* task) {
 						set_var(task, vec_get(obj->func.params, i), vec_get(args, i));
 					}
 				} else {
-					obj->func.cfunc(task);
-
+					if (setjmp(cfunc_jmp_buf) == 0) {
+						obj->func.cfunc(task);
+					}
+					
 					if (task->state == TASK_RUNNING) {
 						push_obj(task, task->frame->ret);
 						
@@ -3748,6 +3736,12 @@ tug_Object* tug_tuple(void) {
 }
 
 void tug_tuplepush(tug_Object* tuple, tug_Object* obj) {
+	if (obj->kind == TUPLE) {
+		for (size_t i = 0; i < vec_count(obj->tuple); i++) {
+			vec_push(tuple->tuple, vec_get(obj->tuple, i));
+		}
+		return;
+	}
 	vec_push(tuple->tuple, obj);
 }
 
@@ -3757,6 +3751,10 @@ tug_Object* tug_tuplepop(tug_Object* tuple) {
 	return obj ? obj : obj_nil;
 }
 
+unsigned long tug_getid(tug_Object* obj) {
+	return obj->id;
+}
+
 tug_Type tug_gettype(tug_Object* obj) {
 	switch (obj->kind) {
 		case STR: return TUG_STR;
@@ -3764,7 +3762,7 @@ tug_Type tug_gettype(tug_Object* obj) {
 		case TRUE: return TUG_TRUE;
 		case FALSE: return TUG_FALSE;
 		case NIL: return TUG_NIL;
-		case FUNC: TUG_FUNC;
+		case FUNC: return TUG_FUNC;
 		case TABLE: return TUG_TABLE;
 		case TUPLE: return TUG_TUPLE;
 		default: return TUG_UNKNOWN;
@@ -3844,6 +3842,33 @@ int tug_hasarg(tug_Task* T, size_t idx) {
 	return 1;
 }
 
+void tug_retmulti(tug_Task* T, size_t n, ...) {
+	Vector* stack = T->stack;
+	if (n == 0) {
+		T->frame->ret = obj_nil;
+		return;
+	}
+
+	va_list args;
+	va_start(args, n);
+
+	if (n == 1) {
+		T->frame->ret = va_arg(args, Object*);
+		va_end(args);
+		return;
+	}
+
+	Vector* tuple = vec_serve(n);
+	for (size_t i = 0; i < n; i++) {
+		vec_push(tuple, va_arg(args, Object*));
+	}
+	Object* obj = gc_obj(obj_create(TUPLE));
+	obj->tuple = tuple;
+	T->frame->ret = obj;
+
+	va_end(args);
+}
+
 void tug_ret(tug_Task* T, tug_Object* obj) {
 	T->frame->ret = obj;
 }
@@ -3854,6 +3879,8 @@ void tug_err(tug_Task* T, const char* fmt, ...) {
 	vsnprintf(T->msg, sizeof(T->msg), fmt, args);
 	va_end(args);
 	T->state = TASK_ERROR;
+
+	longjmp(cfunc_jmp_buf, 1);
 }
 
 static void append_str(char** buf, size_t* len, const char* fmt, ...) {

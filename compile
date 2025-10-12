@@ -1,2 +1,2 @@
-gcc -c tug.c -o tug.o
+gcc -c tug.c -o tug.o -g
 ar rcs libtug.a tug.o

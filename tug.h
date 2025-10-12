@@ -38,6 +38,7 @@ tug_Object* tug_table(void);
 typedef void(*tug_CFunc)(tug_Task*);
 tug_Object* tug_cfunc(const char* name, tug_CFunc func);
 
+unsigned long tug_getid(tug_Object* obj);
 tug_Type tug_gettype(tug_Object* obj);
 
 const char* tug_getstr(tug_Object* obj);
@@ -62,6 +63,7 @@ size_t tug_getargc(tug_Task* T);
 tug_Object* tug_getarg(tug_Task* T, size_t idx);
 int tug_hasarg(tug_Task* T, size_t idx);
 
+void tug_retmulti(tug_Task* T, size_t n, ...);
 void tug_ret(tug_Task* T, tug_Object* obj);
 void tug_err(tug_Task* T, const char* fmt, ...);
 char* tug_geterr(tug_Task* T);
