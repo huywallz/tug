@@ -17,8 +17,10 @@
 #endif
 
 #include "tug.h"
+#include "tuglib.h"
 
 #define TUG_DEBUG 1
+#define TUG_CALL_LIMIT (size_t)(1000)
 
 static void* gc_malloc(size_t size);
 static void* gc_realloc(void* ptr, size_t new_size);
@@ -77,7 +79,7 @@ enum {
 	NUM, STR, NAME, TRUE, FALSE, NIL,
 	ADD, SUB, MUL, DIV, MOD,
 	GT, LT, GE, LE, EQ, NE,
-	
+
 	AND, OR, NOT,
 	IF, ELSE, ELSEIF, THEN,
 	WHILE, FOR, IN, DO,
@@ -92,13 +94,13 @@ enum {
 	ASSIGN, DOT, COMMA,
 
 	POS, NEG,
-	
+
 	#if TUG_DEBUG
-	
+
 	DEBUG_PRINT,
-	
+
 	#endif
-	
+
 	FUNCDEF, FUNCCALL,
 	TUPLE, TABLE, INDEX, SETINDEX,
 	ITER_STR, ITER_TABLE,
@@ -226,13 +228,13 @@ static int ltok(void) {
 		else if (streq(tstr, "func")) tkind = FUNC;
 		else if (streq(tstr, "return")) tkind = RETURN;
 		else if (streq(tstr, "end")) tkind = END;
-		
+
 		#if TUG_DEBUG
-		
+
 		else if (streq(tstr, "debug_print")) tkind = DEBUG_PRINT;
-		
+
 		#endif
-		
+
 		else tkind = NAME;
 
 		return 0;
@@ -295,14 +297,14 @@ static int ltok(void) {
 static int lpeektk(int* type) {
 	size_t pidx = idx;
 	size_t pln = ln;
-	
+
 	int err = ltok();
 	if (err) return err;
-	
+
 	if (type) *type = tkind;
 	idx = pidx;
 	ln = pln;
-	
+
 	return 0;
 }
 
@@ -324,7 +326,7 @@ static Vector* vec_serve(size_t size) {
 			res->capacity = size;
 			res->array = gc_realloc(res->array, res->capacity * sizeof(void*));
 		}
-		
+
 		return res;
 	}
 	if (size < 8) size = 8;
@@ -355,7 +357,7 @@ static void vec_pushfirst(Vector* vec, void* obj) {
 		vec->capacity *= 2;
 		vec->array = gc_realloc(vec->array, vec->capacity * sizeof(void*));
 	}
-	
+
 	memmove(&vec->array[1], &vec->array[0], vec->count * sizeof(void*));
 	vec->array[0] = obj;
 	vec->count++;
@@ -364,7 +366,7 @@ static void vec_pushfirst(Vector* vec, void* obj) {
 static void* vec_pop(Vector* vec) {
 	if (vec->count == 0) return NULL;
 	void* res = vec->array[--vec->count];
-	
+
 	if (vec->count < vec->capacity / 4 && vec->capacity > 8) {
 		vec->capacity /= 4;
 		vec->array = gc_realloc(vec->array, vec->capacity * sizeof(void*));
@@ -375,10 +377,10 @@ static void* vec_pop(Vector* vec) {
 static void* vec_popfirst(Vector* vec) {
 	if (vec->count == 0) return NULL;
 	void* res = vec->array[0];
-	
+
 	memmove(&vec->array[0], &vec->array[1], (vec->count - 1) * sizeof(void*));
 	vec->count--;
-	
+
 	if (vec->count < vec->capacity / 4 && vec->capacity > 8) {
 		vec->capacity /= 4;
 		vec->array = gc_realloc(vec->array, vec->capacity * sizeof(void*));
@@ -448,7 +450,7 @@ static Node* node_binop(int kind, Node* o1, Node* o2, size_t ln) {
 	data->o1 = o1;
 	data->o2 = o2;
 	data->ln = ln;
-	
+
 	return node_create(kind, data);
 }
 
@@ -461,7 +463,7 @@ static Node* node_unary(int kind, Node* right, size_t ln) {
 	Node_Unary* data = gc_malloc(sizeof(Node_Unary));
 	data->right = right;
 	data->ln = ln;
-	
+
 	return node_create(kind, data);
 }
 
@@ -472,7 +474,7 @@ typedef struct {
 static Node* node_str(int kind, const char* str) {
 	Node_Str* data = gc_malloc(sizeof(Node_Str));
 	data->str = gc_strdup(str);
-	
+
 	return node_create(kind, data);
 }
 
@@ -496,7 +498,7 @@ typedef struct {
 static Node* node_debugprint(Node* expr) {
 	Node_DebugPrint* debugprint = gc_malloc(sizeof(Node_DebugPrint));
 	debugprint->expr = expr;
-	
+
 	return node_create(DEBUG_PRINT, debugprint);
 }
 
@@ -536,7 +538,7 @@ static NodeBlock* node_block(void) {
 	block->count = 0;
 	block->capacity = 64;
 	block->nodes = gc_malloc(sizeof(Node*) * block->capacity);
-	
+
 	return block;
 }
 
@@ -552,7 +554,7 @@ static void node_block_push(NodeBlock* block, Node* node) {
 static void node_free(Node* node);
 static void node_block_free(NodeBlock* block) {
 	if (!block) return;
-	
+
 	for (size_t i = 0; i < block->count; i++) {
 		node_free(block->nodes[i]);
 	}
@@ -576,7 +578,7 @@ static Node* node_if(Node* cond, NodeBlock* block, Vector* conds, Vector* blocks
 	nif->conds = conds;
 	nif->blocks = blocks;
 	nif->eblock = eblock;
-	
+
 	return node_create(IF, nif);
 }
 
@@ -589,7 +591,7 @@ static Node* node_while(Node* cond, NodeBlock* block) {
 	Node_While* nwhile = gc_malloc(sizeof(Node_While));
 	nwhile->cond = cond;
 	nwhile->block = block;
-	
+
 	return node_create(WHILE, nwhile);
 }
 
@@ -604,7 +606,7 @@ static Node* node_funcdef(char* name, Vector* params, NodeBlock* block) {
 	funcdef->name = name;
 	funcdef->params = params;
 	funcdef->block = block;
-	
+
 	return node_create(FUNCDEF, funcdef);
 }
 
@@ -632,7 +634,7 @@ static Node* node_table(Vector* keys, Vector* values) {
 	Node_Table* ntable = gc_malloc(sizeof(Node_Table));
 	ntable->keys = keys;
 	ntable->values = values;
-	
+
 	return node_create(TABLE, ntable);
 }
 
@@ -672,7 +674,7 @@ static Node* node_for(Vector* names, Node* node, NodeBlock* block, size_t ln) {
 	nfor->node = node;
 	nfor->block = block;
 	nfor->ln = ln;
-	
+
 	return node_create(FOR, nfor);
 }
 
@@ -687,7 +689,7 @@ static Assign* assign_var(char* name) {
 	Assign* assign = gc_malloc(sizeof(Assign));
 	assign->kind = ASSIGN;
 	assign->name = name;
-	
+
 	return assign;
 }
 
@@ -696,7 +698,7 @@ static Assign* assign_index(Node* obj, Node* key) {
 	assign->kind = SETINDEX;
 	assign->obj = obj;
 	assign->key = key;
-	
+
 	return assign;
 }
 
@@ -706,7 +708,7 @@ static void assign_free(Assign* assign) {
 		node_free(assign->obj);
 		node_free(assign->key);
 	}
-	
+
 	gc_free(assign);
 }
 
@@ -723,7 +725,7 @@ static Node* node_assignment(Vector* assigns, uint8_t local, Vector* values, siz
 	assignment->local = local;
 	assignment->values = values;
 	assignment->ln = ln;
-	
+
 	return node_create(ASSIGN, assignment);
 }
 
@@ -762,16 +764,16 @@ static void node_free(Node* node) {
 			Node_Str* str = (Node_Str*)node->data;
 			gc_free(str->str);
 		} break;
-		
+
 		#if TUG_DEBUG
-		
+
 		case DEBUG_PRINT: {
 			Node_DebugPrint* debugprint = (Node_DebugPrint*)node->data;
 			node_free(debugprint->expr);
 		} break;
-		
+
 		#endif
-		
+
 		// old assign code
 		/*
 		case ASSIGN:
@@ -789,29 +791,29 @@ static void node_free(Node* node) {
 			gc_free(assign->values);
 		} break;
 		*/
-		
+
 		case IF: {
 			Node_If* nif = (Node_If*)node->data;
-			
+
 			node_free(nif->cond);
-			
+
 			node_block_free(nif->block);
 			vec_advfree(nif->conds, node_free);
 			vec_advfree(nif->blocks, node_block_free);
-			
+
 			node_block_free(nif->eblock);
 		} break;
-		
+
 		case WHILE: {
 			Node_While* nwhile = (Node_While*)node->data;
-			
+
 			node_free(nwhile->cond);
 			node_block_free(nwhile->block);
 		} break;
-		
+
 		case FUNCDEF: {
 			Node_FuncDef* funcdef = (Node_FuncDef*)node->data;
-			
+
 			gc_free(funcdef->name);
 			vec_stdfree(funcdef->params);
 
@@ -824,12 +826,12 @@ static void node_free(Node* node) {
 			node_free(funccall->node);
 			vec_advfree(funccall->values, node_free);
 		} break;
-		
+
 		case RETURN: {
 			vec_advfree(node->data, node_free);
 			node->data = NULL;
 		} break;
-		
+
 		case TABLE: {
 			if (node->data) {
 				Node_Table* ntable = (Node_Table*)node->data;
@@ -837,7 +839,7 @@ static void node_free(Node* node) {
 				vec_advfree(ntable->values, node_free);
 			}
 		} break;
-		
+
 		// old set index code
 		/*
 		case SETINDEX: {
@@ -854,7 +856,7 @@ static void node_free(Node* node) {
 			node_free(nfor->node);
 			node_block_free(nfor->block);
 		} break;
-		
+
 		case ASSIGN: {
 			Node_Assignment* assignment = (Node_Assignment*)node->data;
 			vec_advfree(assignment->assigns, assign_free);
@@ -897,6 +899,7 @@ static int node_isexpr(Node* node) {
 
 #define pexpr por
 static int por(void);
+static NodeBlock* pblock(int elseif);
 static int pval(void) {
 	if (tkind == STR || tkind == NAME) {
 		node = node_str(tkind, (const char*)tstr);
@@ -910,16 +913,16 @@ static int pval(void) {
 	} else if (tkind == LPAREN) {
 		if (ltok() || pexpr()) return 1;
 		else if (tkind != RPAREN) return perr("expected ')'");
-		
+
 		return ltok();
 	} else if (tkind == LCURLY) {
 		if (ltok()) return 1;
 		if (tkind == RCURLY) {
 			node = node_create(TABLE, NULL);
-			
+
 			return ltok();
 		}
-		
+
 		Vector* keys = vec_create();
 		Vector* values = vec_create();
 		while (tkind != RCURLY && tkind != EOF) {
@@ -933,7 +936,7 @@ static int pval(void) {
 					perr("expected '='");
 					goto __terr;
 				} else if (ltok()) goto __terr;
-				
+
 				vec_push(keys, node);
 				if (pexpr()) goto __terr;
 				vec_push(values, node);
@@ -943,7 +946,7 @@ static int pval(void) {
 				vec_push(keys, node_str(STR, (const char*)tstr));
 				int kind;
 				if (lpeektk(&kind)) goto __terr;
-				
+
 				if (kind == ASSIGN) {
 					ltok();
 					if (ltok() || pexpr()) goto __terr;
@@ -963,7 +966,7 @@ static int pval(void) {
 				vec_push(values, node);
 				node = NULL;
 			}
-			
+
 			if (tkind == COMMA) {
 				if (ltok()) goto __terr;
 			} else if (tkind != RCURLY && tkind != EOF) {
@@ -976,16 +979,58 @@ static int pval(void) {
 			perr("expected '}'");
 			goto __terr;
 		}
-		
+
 		node = node_table(keys, values);
 		return ltok();
-		
+
 		__terr: {
 			vec_advfree(keys, node_free);
 			vec_advfree(values, node_free);
-			
+
 			return 1;
 		}
+	} else if (tkind == FUNC) {
+		Vector* params = NULL;
+		if (ltok()) return 1;
+		else if (tkind != LPAREN) return perr("expected '('");
+		else if (ltok()) return 1;
+		else if (tkind != RPAREN) {
+			params = vec_create();
+			
+			while (1) {
+				if (tkind != NAME) {
+					vec_stdfree(params);
+					return perr("expected '<name>'");
+				}
+				vec_push(params, gc_strdup(tstr));
+				
+				if (ltok()) {
+					vec_stdfree(params);
+					return 1;
+				} else if (tkind == COMMA) {
+					if (ltok()) {
+						vec_stdfree(params);
+						return 1;
+					}
+				} else break;
+			}
+		}
+		if (tkind != RPAREN) {
+			vec_stdfree(params);
+			return perr("expected ')'");
+		} else if (ltok()) {
+			vec_stdfree(params);
+			return 1;
+		}
+		
+		NodeBlock* block = pblock(0);
+		if (!block) {
+			vec_stdfree(params);
+			return 1;
+		}
+		
+		node = node_funcdef(NULL, params, block);
+		return ltok();
 	}
 
 	return perr("unexpected token");
@@ -995,7 +1040,7 @@ static int pcall(void) {
 	if (pval()) return 1;
 	Node* left = node;
 	node = NULL;
-	
+
 	while (tkind == LPAREN || tkind == LBRACK || tkind == DOT) {
 		size_t ln = tln;
 		int kind = tkind;
@@ -1006,16 +1051,16 @@ static int pcall(void) {
 			#define pcall_free() vec_advfree(values, node_free); node_free(left)
 			if (tkind != RPAREN) {
 				values = vec_create();
-	
+
 				while (1) {
 					if (pexpr()) {
 						pcall_free();
 						return 1;
 					}
-	
+
 					vec_push(values, node);
 					node = NULL;
-	
+
 					if (tkind != COMMA) break;
 					else if (ltok()) {
 						pcall_free();
@@ -1023,7 +1068,7 @@ static int pcall(void) {
 					}
 				}
 			}
-			
+
 			if (tkind != RPAREN) {
 				pcall_free();
 				return perr("expected ')'");
@@ -1031,14 +1076,14 @@ static int pcall(void) {
 				pcall_free();
 				return 1;
 			}
-	
+
 			left = node_funccall(left, values, ln);
 		} else if (kind == LBRACK) {
 			if (pexpr()) {
 				node_free(left);
 				return 1;
 			}
-			
+
 			if (tkind != RBRACK) {
 				node_free(left);
 				return perr("expected ']'");
@@ -1046,21 +1091,21 @@ static int pcall(void) {
 				node_free(left);
 				return 1;
 			}
-			
+
 			left = node_binop(INDEX, left, node, ln);
 		} else if (kind == DOT) {
 			if (tkind != NAME) {
 				node_free(left);
 				return perr("expected '<name>'");
 			}
-			
+
 			Node* key = node_str(STR, (const char*)tstr);
 			if (ltok()) {
 				node_free(key);
 				node_free(left);
 				return 1;
 			}
-			
+
 			left = node_binop(INDEX, left, key, ln);
 		}
 	}
@@ -1078,7 +1123,7 @@ static int punary(void) {
 
 		return 0;
 	}
-	
+
 	return pcall();
 }
 
@@ -1094,7 +1139,7 @@ static int pterm(void) {
 		left = node_binop(kind, left, right, ln);
 	}
 	node = left;
-	
+
 	return 0;
 }
 
@@ -1110,7 +1155,7 @@ static int parith(void) {
 		left = node_binop(kind, left, right, ln);
 	}
 	node = left;
-	
+
 	return 0;
 }
 
@@ -1126,7 +1171,7 @@ static int pcomp(void) {
 		left = node_binop(kind, left, right, ln);
 	}
 	node = left;
-	
+
 	return 0;
 }
 
@@ -1141,7 +1186,7 @@ static int pand(void) {
 		left = node_binop(AND, left, right, ln);
 	}
 	node = left;
-	
+
 	return 0;
 }
 
@@ -1156,7 +1201,7 @@ static int por(void) {
 		left = node_binop(OR, left, right, ln);
 	}
 	node = left;
-	
+
 	return 0;
 }
 
@@ -1171,42 +1216,42 @@ static NodeBlock* pblock(int elseif) {
 		node_block_push(block, node);
 		node = NULL;
 	}
-	
+
 	if (!elseif && tkind != END) {
 		node_block_free(block);
 		perr("expected 'end'");
 		return NULL;
 	}
-	
+
 	return block;
 }
 
 static int pstmt(void) {
 	#if TUG_DEBUG
-	
+
 	if (tkind == DEBUG_PRINT) {
 		if (ltok() || pexpr()) return 1;
 		node = node_debugprint(node);
-		
+
 		return 0;
 	}
-	
+
 	#endif
-	
+
 	if (tkind == IF) {
 		if (ltok() || pexpr()) return 1;
 		else if (tkind != THEN) return perr("expected 'then'");
 		else if (ltok()) return 1;
-		
+
 		Node* cond = node;
 		node = NULL;
-		
+
 		NodeBlock* block = pblock(1);
 		if (!block) {
 			node_free(cond);
 			return 1;
 		}
-		
+
 		Vector* conds = vec_create();
 		Vector* blocks = vec_create();
 		while (tkind == ELSEIF) {
@@ -1215,20 +1260,20 @@ static int pstmt(void) {
 				perr("expected 'then'");
 				goto __err;
 			} else if (ltok()) goto __err;
-			
+
 			Node* econd = node;
 			node = NULL;
-			
+
 			NodeBlock* block = pblock(1);
 			if (!block) {
 				node_free(econd);
 				goto __err;
 			}
-			
+
 			vec_push(conds, econd);
 			vec_push(blocks, block);
 		}
-		
+
 		NodeBlock* eblock = NULL;
 		if (tkind == ELSE) {
 			if (ltok()) goto __err;
@@ -1239,28 +1284,28 @@ static int pstmt(void) {
 			perr("expected 'end'");
 			goto __err;
 		}
-		
+
 		node = node_if(cond, block, conds, blocks, eblock);
 		return ltok();
-		
+
 		__err: {
 			node_free(cond);
 			node_block_free(block);
 			vec_advfree(conds, node_free);
 			vec_advfree(blocks, node_block_free);
-			
+
 			return 1;
 		}
 	}
-	
+
 	if (tkind == WHILE) {
 		if (ltok() || pexpr()) return 1;
 		else if (tkind != DO) return perr("expected 'do'");
 		else if (ltok()) return 1;
-		
+
 		Node* cond = node;
 		node = NULL;
-		
+
 		ldepth++;
 		NodeBlock* block = pblock(0);
 		ldepth--;
@@ -1268,42 +1313,42 @@ static int pstmt(void) {
 			node_free(cond);
 			return 1;
 		}
-		
+
 		node = node_while(cond, block);
 		return ltok();
 	}
-	
+
 	if (tkind == BREAK || tkind == CONTINUE) {
 		if (ldepth == 0) {
 			if (tkind == BREAK) return perr("'break' outside loop");
 			else return perr("'continue' outside loop");
 		}
-		
+
 		node = node_create(tkind, NULL);
 		return ltok();
 	}
-	
+
 	if (tkind == FUNC) {
 		if (ltok()) return 1;
 		else if (tkind != NAME) return perr("expected '<name>'");
-		
+
 		char* name = gc_strdup(tstr);
 		if (ltok()) goto __freename;
 		else if (tkind != LPAREN) {
 			perr("expected '('");
 			goto __freename;
 		} else if (ltok()) goto __freename;
-		
+
 		Vector* params = NULL;
 		goto __donename;
-		
+
 		__freename: {
 			gc_free(name);
 			return 1;
 		}
-		
+
 		__donename:
-		
+
 		if (tkind != RPAREN) {
 			params = vec_create();
 			while (1) {
@@ -1311,76 +1356,79 @@ static int pstmt(void) {
 					perr("expected '<name>'");
 					goto __freeparams;
 				}
-				
+
 				char* param = gc_strdup(tstr);
 				vec_push(params, param);
 				if (ltok()) goto __freeparams;
-				
+
 				if (tkind != COMMA) break;
 				else if (ltok()) goto __freeparams;
 			}
 		}
 		goto __nofreeparams;
-		
+
 		__freeparams: {
 			gc_free(name);
 			vec_stdfree(params);
-			
+
 			return 1;
 		}
-		
+
 		__nofreeparams:
-		
+
 		if (tkind != RPAREN) {
 			perr("expected ')'");
 			goto __freeparams;
 		} else if (ltok()) goto __freeparams;
-		
+
 		NodeBlock* block = pblock(0);
 		if (!block) goto __freeparams;
-		
+
 		node = node_funcdef(name, params, block);
 		return ltok();
 	}
-	
+
 	if (tkind == RETURN) {
 		if (ltok()) return 1;
 		if (tkind == END || tkind == ELSEIF || tkind == ELSE || tkind == EOF) {
 			node = node_create(RETURN, NULL);
 			return 0;
 		}
-		
+
 		Vector* values = vec_create();
 		while (1) {
-			if (pexpr()) goto __reterror;
-			vec_push(values, node);
-			node = NULL;
-			
-			if (tkind == COMMA) {
-				if (ltok()) goto __reterror;
-				continue;
-			} else break;
-			
-			__reterror: {
+			if (pexpr()) {
 				vec_advfree(values, node_free);
 				return 1;
 			}
+			vec_push(values, node);
+			node = NULL;
+
+			if (tkind == COMMA) {
+				if (ltok()) {
+					vec_advfree(values, node_free);
+					return 1;
+				}
+				continue;
+			}
+
+			break;
 		}
-		
+
 		node = node_create(RETURN, values);
 		return 0;
 	}
-	
+
 	if (tkind == FOR) {
 		size_t ln = tln;
 		if (ltok()) return 1;
 		if (tkind != NAME) return perr("expected '<name>'");
-		
+
 		Vector* names = vec_create();
 		while (1) {
 			vec_push(names, gc_strdup(tstr));
 			if (ltok()) goto __forerr;
-			
+
 			if (tkind == COMMA) {
 				if (ltok()) goto __forerr;
 				if (tkind != NAME) {
@@ -1389,7 +1437,7 @@ static int pstmt(void) {
 				}
 			} else break;
 		}
-		
+
 		if (tkind != IN) {
 			perr("expected 'in'");
 			goto __forerr;
@@ -1398,27 +1446,27 @@ static int pstmt(void) {
 			perr("expected 'do'");
 			goto __forerr;
 		} else if (ltok()) goto __forerr;
-		
+
 		Node* obj = node;
 		node = NULL;
-		
+
 		NodeBlock* block = pblock(0);
 		if (!block) {
 			node_free(obj);
 			goto __forerr;
 		}
-		
+
 		node = node_for(names, obj, block, ln);
 		return ltok();
-			
+
 		__forerr: {
 			vec_stdfree(names);
 			return 1;
 		}
 	}
-	
+
 	if (pexpr()) return 1;
-	
+
 	if ((node->kind == NAME || node->kind == INDEX) && (tkind == LOCAL || tkind == ASSIGN || tkind == COMMA)) {
 		Vector* assigns = vec_create();
 
@@ -1439,12 +1487,12 @@ static int pstmt(void) {
 		__push_new_assign();
 
 		int must_assign = 0;
-		
+
 		while (1) {
 			if (tkind == COMMA) {
 				if (ltok()) goto __lefterr;
 			} else if (tkind == ASSIGN || tkind == LOCAL) break;
-			
+
 			if (pexpr()) goto __lefterr;
 			if (node->kind != NAME && node->kind != INDEX) {
 				perr("invalid assignment target");
@@ -1475,7 +1523,7 @@ static int pstmt(void) {
 
 		node = node_assignment(assigns, local, values, ln);
 		return 0;
-		
+
 		__fullerr: {
 			vec_advfree(values, node_free);
 		}
@@ -1485,7 +1533,7 @@ static int pstmt(void) {
 			return 1;
 		}
 	}
-	
+
 	// old assign code, ya
 	/*
 	if (node->kind == NAME && (tkind == LOCAL || tkind == ASSIGN)) {
@@ -1517,7 +1565,7 @@ static int pstmt(void) {
 		return 0;
 	}
 	*/
-	
+
 	return 0;
 }
 
@@ -1579,7 +1627,7 @@ static size_t emit_addr(size_t addr) {
 	ensure(sizeof(size_t));
 	memcpy(&main_bc->data[main_bc->size], &addr, sizeof(size_t));
 	main_bc->size += sizeof(size_t);
-	
+
 	return pos;
 }
 
@@ -1616,7 +1664,7 @@ static ui8_array* ui8_array_create(void) {
 	array->count = 0;
 	array->capacity = 8;
 	array->values = gc_malloc(array->capacity * sizeof(uint8_t));
-	
+
 	return array;
 }
 
@@ -1702,11 +1750,11 @@ static void push_loop(size_t start) {
 static void pop_loop(size_t end) {
 	LoopContext* ctx = loop_ctx;
 	loop_ctx = loop_ctx->next;
-	
+
 	while (!pos_stack_empty(ctx->breaks)) {
 		patch_addr(pos_stack_pop(ctx->breaks), end);
 	}
-	
+
 	pos_stack_free(ctx->breaks);
 	gc_free(ctx);
 }
@@ -1726,13 +1774,68 @@ enum {
 	OP_MULTIASSIGN,
 	OP_ITER, OP_NEXT,
 	OP_HALT,
-	
+
 	#if TUG_DEBUG
-	
+
 	OP_DEBUG_PRINT,
-	
+
 	#endif
 };
+
+#if TUG_DEBUG
+
+const char* get_opname(uint8_t op) {
+	switch (op) {
+		case OP_NUM: return "OP_NUM";
+		case OP_STR: return "OP_STR";
+		case OP_VAR: return "OP_VAR";
+		case OP_TRUE: return "OP_TRUE";
+		case OP_FALSE: return "OP_FALSE";
+		case OP_NIL: return "OP_NIL";
+		case OP_ADD: return "OP_ADD";
+		case OP_SUB: return "OP_SUB";
+		case OP_MUL: return "OP_MUL";
+		case OP_DIV: return "OP_DIV";
+		case OP_MOD: return "OP_MOD";
+		case OP_GT: return "OP_GT";
+		case OP_LT: return "OP_LT";
+		case OP_GE: return "OP_GE";
+		case OP_LE: return "OP_LE";
+		case OP_EQ: return "OP_EQ";
+		case OP_NE: return "OP_NE";
+		case OP_POS: return "OP_POS";
+		case OP_NEG: return "OP_NEG";
+		case OP_NOT: return "OP_NOT";
+		case OP_POP: return "OP_POP";
+		case OP_JUMPT: return "OP_JUMPT";
+		case OP_JUMPF: return "OP_JUMPF";
+		case OP_JUMP: return "OP_JUMP";
+		case OP_STORE: return "OP_STORE";
+		case OP_PUSH_CLOSURE: return "OP_PUSH_CLOSURE";
+		case OP_POP_CLOSURE: return "OP_POP_CLOSURE";
+		case OP_JUMPP: return "OP_JUMPP";
+		case OP_FUNCDEF: return "OP_FUNCDEF";
+		case OP_CALL: return "OP_CALL";
+		case OP_TUPLE: return "OP_TUPLE";
+		case OP_TABLE: return "OP_TABLE";
+		case OP_SETINDEX: return "OP_SETINDEX";
+		case OP_GETINDEX: return "OP_GETINDEX";
+		case OP_MULTIASSIGN: return "OP_MULTIASSIGN";
+		case OP_ITER: return "OP_ITER";
+		case OP_NEXT: return "OP_NEXT";
+		case OP_HALT: return "OP_HALT";
+	
+		#if TUG_DEBUG
+	
+		case OP_DEBUG_PRINT: return "OP_DEBUG_PRINT";
+	
+		#endif
+		
+		default: return NULL;
+	};
+}
+
+#endif
 
 static void emit_closure(int i) {
 	if (i) {
@@ -1811,46 +1914,46 @@ static void compile_node(Node* node) {
 				emit_addr(binop->ln);
 			}
 		} break;
-		
+
 		#if TUG_DEBUG
-		
+
 		case DEBUG_PRINT: {
 			Node_DebugPrint* debugprint = (Node_DebugPrint*)node->data;
 			compile_node(debugprint->expr);
-			
+
 			emit_byte(OP_DEBUG_PRINT);
 		} break;
-		
+
 		#endif
-		
+
 		case AND: {
 			Node_BinOp* binop = (Node_BinOp*)node->data;
 			compile_node(binop->o1);
-			
+
 			emit_byte(OP_JUMPF);
 			size_t pos = emit_addr(0);
 			emit_byte(1);
-			
+
 			emit_byte(OP_POP);
 			emit_addr(1);
 			compile_node(binop->o2);
 			patch_addr(pos, main_bc->size);
 		} break;
-		
+
 		case OR: {
 			Node_BinOp* binop = (Node_BinOp*)node->data;
 			compile_node(binop->o1);
-			
+
 			emit_byte(OP_JUMPT);
 			size_t pos = emit_addr(0);
 			emit_byte(1);
-			
+
 			emit_byte(OP_POP);
 			emit_addr(1);
 			compile_node(binop->o2);
 			patch_addr(pos, main_bc->size);
 		} break;
-		
+
 		// yes, its old code
 		/*
 		case LOCAL:
@@ -1880,7 +1983,7 @@ static void compile_node(Node* node) {
 			}
 		} break;
 		 */
-		
+
 		case POS:
 		case NEG:
 		case NOT: {
@@ -1891,7 +1994,7 @@ static void compile_node(Node* node) {
 				emit_addr(unary->ln);
 			}
 		} break;
-		
+
 		case IF: {
 			Node_If* nif = (Node_If*)node->data;
 			pos_stack* stack = pos_stack_create();
@@ -1921,51 +2024,51 @@ static void compile_node(Node* node) {
 			while (!pos_stack_empty(stack)) {
 				patch_addr(pos_stack_pop(stack), main_bc->size);
 			}
-			
+
 			emit_closure(0);
 			pos_stack_free(stack);
 		} break;
-		
+
 		case WHILE: {
 			Node_While* nwhile = (Node_While*)node->data;
-			
+
 			push_loop(main_bc->size);
 			compile_node(nwhile->cond);
 			size_t upos = emit_jump(OP_JUMPF, 0, 0);
-			
+
 			emit_closure(1);
 			compile_block(nwhile->block);
 			emit_closure(0);
-			
+
 			emit_byte(OP_JUMP);
 			emit_addr(loop_ctx->start);
-			
+
 			patch_addr(upos, main_bc->size);
 			pop_loop(main_bc->size);
 		} break;
-		
+
 		case BREAK: {
 			emit_byte(OP_JUMPP);
 			emit_addr(depth - loop_ctx->depth);
 			pos_stack_push(loop_ctx->breaks, emit_addr(0));
 		} break;
-		
+
 		case CONTINUE: {
 			emit_byte(OP_JUMPP);
 			emit_addr(depth - loop_ctx->depth - 1);
 			emit_addr(loop_ctx->start);
 		} break;
-		
+
 		case FUNCDEF: {
 			Node_FuncDef* funcdef = (Node_FuncDef*)node->data;
-			
+
 			emit_byte(OP_FUNCDEF);
-			emit_str(funcdef->name == NULL ? "" : funcdef->name);
-			
+			emit_str(funcdef->name == NULL ? "<anonymous>" : funcdef->name);
+
 			Vector* params = funcdef->params;
 			emit_addr(vec_count(params));
 			vec_iter(params, emit_str);
-			
+
 			Bytecode* prev = main_bc;
 			main_bc = bc_create();
 			compile_block(funcdef->block);
@@ -1973,10 +2076,10 @@ static void compile_node(Node* node) {
 			emit_byte(OP_HALT);
 			Bytecode* temp = main_bc;
 			main_bc = prev;
-			
+
 			emit_bc(temp);
 			bc_free(temp);
-			
+
 			if (funcdef->name != NULL) {
 				emit_byte(OP_STORE);
 				emit_byte(1);
@@ -1984,24 +2087,24 @@ static void compile_node(Node* node) {
 				emit_str(funcdef->name);
 			}
 		} break;
-		
+
 		case FUNCCALL: {
 			Node_FuncCall* funccall = (Node_FuncCall*)node->data;
 			compile_node(funccall->node);
 			vec_iter(funccall->values, compile_node);
-			
+
 			emit_byte(OP_CALL);
 			emit_addr(vec_count(funccall->values));
 			emit_addr(funccall->ln);
 		} break;
-		
+
 		case RETURN: {
 			if (node->data == NULL) {
 				emit_byte(OP_NIL);
 			} else {
 				Vector* values = (Vector*)node->data;
 				size_t val_count = vec_count(values);
-				
+
 				if (val_count == 1) {
 					compile_node(vec_get(values, 0));
 				} else {
@@ -2014,16 +2117,16 @@ static void compile_node(Node* node) {
 			}
 			emit_byte(OP_HALT);
 		} break;
-		
+
 		case TABLE: {
 			emit_byte(OP_TABLE);
 			if (!node->data) break;
-			
+
 			Node_Table* ntable = (Node_Table*)node->data;
 			for (size_t i = 0; i < vec_count(ntable->keys); i++) {
 				Node* key = vec_get(ntable->keys, i);
 				Node* value = vec_get(ntable->values, i);
-				
+
 				if (key) {
 					compile_node(key);
 					compile_node(value);
@@ -2040,7 +2143,7 @@ static void compile_node(Node* node) {
 				}
 			}
 		} break;
-		
+
 		// cool old code
 		/*
 		case SETINDEX: {
@@ -2058,7 +2161,7 @@ static void compile_node(Node* node) {
 		case ASSIGN: {
 			Node_Assignment* assignment = (Node_Assignment*)node->data;
 			Vector* assigns = assignment->assigns;
-			
+
 			for (size_t i = 0; i < vec_count(assigns); i++) {
 				Assign* assign = vec_get(assigns, i);
 
@@ -2067,9 +2170,9 @@ static void compile_node(Node* node) {
 					compile_node(assign->key);
 				}
 			}
-			
+
 			vec_iter(assignment->values, compile_node);
-			
+
 			emit_byte(OP_MULTIASSIGN);
 			emit_addr(assignment->ln);
 			emit_byte(assignment->local);
@@ -2088,7 +2191,7 @@ static void compile_node(Node* node) {
 
 		case FOR: {
 			Node_For* nfor = (Node_For*)node->data;
-			
+
 			emit_closure(1);
 
 			compile_node(nfor->node);
@@ -2133,7 +2236,7 @@ static Bytecode* gen_bc(const char* src, const char* text, char* errmsg) {
 			bc_free(bc);
 			return NULL;
 		}
-		
+
 		compile_node(node);
 		if (node_isexpr(node)) {
 			emit_byte(OP_POP);
@@ -2195,7 +2298,7 @@ static Object* obj_create(int kind) {
 	obj->kind = kind;
 	obj->str = NULL;
 	obj->marked = 0;
-	
+
 	#ifdef __ANDROID__
 
 	struct timespec ts;
@@ -2256,7 +2359,7 @@ static Object* obj_func(char* src, char* name, Vector* params, Bytecode* bc, str
 	obj->func.bc = bc;
 	obj->func.upper = upper;
 	obj->func.cfunc = NULL;
-	
+
 	return obj;
 }
 
@@ -2269,7 +2372,7 @@ static Object* obj_cfunc(const char* name, tug_CFunc cfunc) {
 	obj->func.bc = NULL;
 	obj->func.upper = NULL;
 	obj->func.cfunc = cfunc;
-	
+
 	return obj;
 }
 
@@ -2278,11 +2381,11 @@ static Object* obj_table(struct Table* table) {
 	if (!table) {
 		table = table_create();
 	}
-	
+
 	Object* obj = obj_create(TABLE);
 	obj->table = table;
 	obj->metatable = obj_nil;
-	
+
 	return obj;
 }
 
@@ -2380,7 +2483,7 @@ static uint64_t obj_hash(Object* obj) {
 			union { double d; uint64_t u; } u;
 			u.d = obj->num;
 			if (u.u == 0x8000000000000000ULL) u.u = 0;
-			
+
 			return u.u * 11400714819323198485ULL;
 		} break;
 		case STR: {
@@ -2390,20 +2493,20 @@ static uint64_t obj_hash(Object* obj) {
 				hash ^= (unsigned char)(*ptr++);
 				hash *= 1099511628211ULL;
 			}
-			
+
 			return hash;
 		} break;
 		case TRUE: return 1231;
 		case FALSE: return 1237;
 		default: {
 			uintptr_t hash = (uintptr_t)obj;
-			
+
 			hash ^= hash >> 33;
 			hash *= 0xff51afd7ed558ccdULL;
 			hash ^= hash >> 33;
 			hash *= 0xc4ceb9fe1a85ec53ULL;
 			hash ^= hash >> 33;
-			
+
 			return (uint64_t)hash;
 		} break;
 	}
@@ -2426,27 +2529,27 @@ static struct Table* table_create() {
 	table->count = 0;
 	table->capacity = 0;
 	table->buckets = NULL;
-	
+
 	return table;
 }
 
 static void table_resize(Table* table, size_t new_cap) {
 	TableEntry** new_buckets = gc_calloc(new_cap, sizeof(TableEntry*));
-	
+
 	for (size_t i = 0; i < table->capacity; i++) {
 		TableEntry* entry = table->buckets[i];
-		
+
 		while (entry) {
 			TableEntry* next = entry->next;
 			uint64_t idx = obj_hash(entry->key) & (new_cap - 1);
-			
+
 			entry->next = new_buckets[idx];
 			new_buckets[idx] = entry;
-			
+
 			entry = next;
 		}
 	}
-	
+
 	gc_free(table->buckets);
 	table->buckets = new_buckets;
 	table->capacity = new_cap;
@@ -2458,9 +2561,9 @@ static void table_smresize(Table* table) {
 		table_resize(table, 8);
 		return;
 	}
-	
+
 	double lf = (double)table->count / table->capacity;
-	
+
 	if (lf > 0.8) {
 		table_resize(table, table->capacity * 2);
 	} else if (lf < 0.2 && table->capacity > 8) {
@@ -2484,13 +2587,13 @@ static void table_remove(Table* table, Object* key) {
 			break;
 		}
 	}
-	
+
 	table_smresize(table);
 }
 
 static Object* table_get(Table* table, Object* key) {
 	if (table->buckets == NULL) return obj_nil;
-	
+
 	size_t index = obj_hash(key) & (table->capacity - 1);
 
 	for (TableEntry* entry = table->buckets[index]; entry; entry = entry->next) {
@@ -2505,7 +2608,7 @@ static void table_set(Table* table, Object* key, Object* value) {
 		table_remove(table, key);
 		return;
 	}
-		
+
 	table_smresize(table);
 
 	size_t index = obj_hash(key) & (table->capacity - 1);
@@ -2528,17 +2631,17 @@ static void table_set(Table* table, Object* key, Object* value) {
 
 static void table_free(struct Table* table) {
 	if (!table || !table->buckets) {
-        gc_free(table);
-        return;
+	gc_free(table);
+	return;
     }
 
     for (size_t i = 0; i < table->capacity; i++) {
-        TableEntry* entry = table->buckets[i];
-        while (entry) {
-            TableEntry* next = entry->next;
-            gc_free(entry);
-            entry = next;
-        }
+	TableEntry* entry = table->buckets[i];
+	while (entry) {
+	    TableEntry* next = entry->next;
+	    gc_free(entry);
+	    entry = next;
+	}
     }
 
     gc_free(table->buckets);
@@ -2598,7 +2701,7 @@ static void varmap_put(VarMap* map, const char* key, Object* value) {
 	entry->next = map->buckets[index];
 	map->buckets[index] = entry;
 	map->count++;
-	
+
 	if ((double)map->count / map->capacity > 0.75) {
 		varmap_resize(map);
 	}
@@ -2609,20 +2712,20 @@ static void varmap_edit(VarMap* map, const char* key, Object* value) {
 	while (map) {
 		uint64_t index = hash_str(key) % map->capacity;
 		VarMapEntry* entry = map->buckets[index];
-		
+
 		while (entry) {
 			if (streq(entry->key, key)) {
 				entry->value = value;
 				return;
 			}
-			
+
 			entry = entry->next;
 		}
-		
+
 		prev = map;
 		map = map->next;
 	}
-	
+
 	if (prev) {
 		varmap_put(prev, key, value);
 	}
@@ -2679,7 +2782,7 @@ static void varmap_free(VarMap* map) {
 			VarMapEntry* next = entry->next;
 			gc_free(entry->key);
 			gc_free(entry);
-			
+
 			entry = next;
 		}
 	}
@@ -2725,11 +2828,11 @@ static Frame* frame_create(const char* src, const char* name, Bytecode* bc, size
 	if (bc) bc->ref++;
 	frame->iptr = 0;
 	frame->base = base;
-	frame->ret_count = -1;
+	frame->ret_count = 0;
 	frame->args = args;
 	frame->ret = obj_nil;
 	frame->next = NULL;
-	
+
 	return frame;
 }
 
@@ -2783,7 +2886,7 @@ static Task* task_create(const char* src, Bytecode* bc) {
 	task->stack = vec_create();
 	task->info = NULL;
 	task->state = TASK_NEW;
-	
+
 	gc_collect_closure(task->global);
 	gc_collect_closure(map);
 	gc_collect_task(task);
@@ -2795,7 +2898,7 @@ static uint8_t read_byte(Task* task) {
 	Frame* frame = task->frame;
 	uint8_t value = frame->bc->data[frame->iptr];
 	frame->iptr++;
-	
+
 	return value;
 }
 
@@ -2804,13 +2907,13 @@ static double read_num(Task* task) {
 	double value;
 	memcpy(&value, &frame->bc->data[frame->iptr], sizeof(double));
 	frame->iptr += sizeof(double);
-	
+
 	return value;
 }
 
 static const char* read_str(Task* task) {
 	Frame* frame = task->frame;
-	
+
 	const char* str = (const char*)&frame->bc->data[frame->iptr];
 	size_t len = strlen(str) + 1;
 	frame->iptr += len;
@@ -2823,24 +2926,24 @@ static size_t read_addr(Task* task) {
 	size_t value;
 	memcpy(&value, &frame->bc->data[frame->iptr], sizeof(size_t));
 	frame->iptr += sizeof(size_t);
-	
+
 	return value;
 }
 
 static Bytecode* read_bc(Task* task) {
 	Frame* frame = task->frame;
 	Bytecode* bc = gc_malloc(sizeof(Bytecode));
-	
+
 	size_t size = read_addr(task);
 	uint8_t* data = gc_malloc(size);
 	memcpy(data, &frame->bc->data[frame->iptr], size);
 	frame->iptr += size;
-	
+
 	bc->size = size;
 	bc->capacity = size;
 	bc->data = data;
 	bc->ref = 0;
-	
+
 	return bc;
 }
 
@@ -2851,7 +2954,7 @@ static Bytecode* read_bc(Task* task) {
 static void gc_collect_obj(Object* obj);
 static inline Object* gc_obj(Object* obj) {
 	gc_collect_obj(obj);
-	
+
 	return obj;
 }
 
@@ -2871,13 +2974,13 @@ static Object* new_func(Task* task, char* name, Vector* params, Bytecode* bc) {
 	for (size_t i = 0; i < count; i++) {
 		vec_push(dparams, gc_strdup((char*)vec_get(params, i)));
 	}
-	
+
 	char* nname = strlen(name) == 0 ? NULL : gc_strdup(name);
 	char* nsrc = gc_strdup(task->frame->src);
-	
+
 	Object* obj = obj_func(nsrc, nname, dparams, bc, get_map(task));
 	gc_collect_obj(obj);
-	
+
 	return obj;
 }
 
@@ -2894,17 +2997,17 @@ static Vector* pop_nvalue(Task* task, size_t n) {
 	Vector* res = vec_serve(n);
 	Frame* frame = task->frame;
 	Vector* stack = task->stack;
-	
+
 	for (size_t i = 0; i < n; i++) {
 		Object* obj;
-		
+
 		if (frame->base >= stack->count) {
 			obj = obj_nil;
 		} else {
 			obj = vec_pop(stack);
 			obj = obj ? obj : obj_nil;
 		}
-		
+
 		if (vec_count(res) < n) {
 			if (obj->kind == TUPLE) {
 				while (vec_count(res) < n && vec_count(obj->tuple) > 0) {
@@ -2913,7 +3016,7 @@ static Vector* pop_nvalue(Task* task, size_t n) {
 			} else vec_pushfirst(res, obj);
 		}
 	}
-	
+
 	return res;
 }
 
@@ -2921,17 +3024,16 @@ static Object* pop_value(Task* task) {
 	Vector* objs = pop_nvalue(task, 1);
 	Object* obj = vec_pop(objs);
 	vec_free(objs);
-	
+
 	return obj;
 }
 
 static Object* pop_tvalue(Task* task) {
 	Frame* frame = task->frame;
 	Vector* stack = task->stack;
-	Object* obj;
-
+		
 	if (frame->base >= stack->count) return obj_nil;
-	
+
 	return vec_pop(stack);
 }
 
@@ -2985,16 +3087,27 @@ static Object* get_arg(Task* task, size_t idx) {
 jmp_buf cfunc_jmp_buf;
 
 void call_obj(Task* task, Object* obj, Vector* args, int f) {
+	if (obj->kind == TABLE && obj->metatable != obj_nil) {
+		Table* mtable = obj->metatable->table;
+		vec_pushfirst(args, obj);
+		Object* func = table_get(mtable, new_str(gc_strdup("__call")));
+		if (func != obj_nil) obj = func;
+	}
 	if (obj->kind != FUNC) {
 		if (f) vec_free(args);
 		assign_err(task, "unable to call '%s'", obj_type(obj));
 		return;
+	} else if (task->frame_count >= TUG_CALL_LIMIT) {
+		if (f) vec_free(args);
+		assign_err(task, "stack overflow");
+		return;
 	}
-	
+
 	Frame* new_frame = frame_create(obj->func.src, obj->func.name, obj->func.bc, vec_count(task->stack), args);
 	new_frame->next = task->frame;
 	task->frame = new_frame;
-	
+	task->frame_count++;
+
 	if (!obj->func.cfunc) {
 		VarMap* func_map = obj->func.upper;
 		VarMap* func_env = varmap_create();
@@ -3008,23 +3121,29 @@ void call_obj(Task* task, Object* obj, Vector* args, int f) {
 		if (setjmp(cfunc_jmp_buf) == 0) {
 			obj->func.cfunc(task);
 		}
-		
+
 		if (task->state == TASK_RUNNING) {
 			push_obj(task, task->frame->ret);
-			
+
 			Frame* next_frame = task->frame->next;
 			frame_free(task->frame, NULL);
 			task->frame = next_frame;
+			task->frame_count--;
 		}
 	}
 }
 
 static void gc_run(void);
 static void task_exec(Task* task) {
+	#define call_fobj(_obj, _args) call_obj(task, (_obj), (_args), 1); if (!tuglib_iserr(task)) {task_exec(task); if (tuglib_iserr(task)) break;}
 	if (task->frame->bc == NULL) return;
 
+	#if TUG_DEBUG
+	uint8_t prev_op = 255;
+	#endif
 	while (1) {
 		uint8_t op = read_byte(task);
+		//printf("%zu %s\n", task->frame->iptr, get_opname(op));
 
 		switch (op) {
 			case OP_NUM: {
@@ -3079,7 +3198,6 @@ static void task_exec(Task* task) {
 						break;
 					}
 				} else if (op == OP_EQ || op == OP_NE) {
-
 					int res = obj_compare(o1, o2);
 					if (op == OP_NE) res = !res;
 					push_obj(task, obj_truth(res));
@@ -3142,7 +3260,7 @@ static void task_exec(Task* task) {
 						case OP_ADD: {
 							size_t len1 = strlen(o1->str);
 							size_t len2 = strlen(o2->str);
-		
+
 							char* res = gc_malloc(len1 + len2 + 1);
 							memcpy(res, o1->str, len1);
 							memcpy(res + len1, o2->str, len2);
@@ -3170,30 +3288,31 @@ static void task_exec(Task* task) {
 				Frame* next_frame = task->frame->next;
 				frame_free(task->frame, NULL);
 				task->frame = next_frame;
+				task->frame_count--;
 				if (task->frame == NULL) task->state = TASK_END;
-				
+
 				vec_pop(task->varmaps);
 				return;
 			}
-			
+
 			case OP_TRUE: push_obj(task, obj_true); break;
 			case OP_FALSE: push_obj(task, obj_false); break;
 			case OP_NIL: push_obj(task, obj_nil); break;
-			
+
 			#if TUG_DEBUG
-			
+
 			case OP_DEBUG_PRINT: {
 				Object* obj = pop_value(task);
 				obj_print(obj);
 			} break;
-			
+
 			#endif
-			
+
 			case OP_POP: {
 				size_t count = read_addr(task);
 				for (size_t i = 0; i < count; i++) pop_value(task);
 			} break;
-			
+
 			case OP_JUMPT: {
 				size_t addr = read_addr(task);
 				uint8_t pback = read_byte(task);
@@ -3203,7 +3322,7 @@ static void task_exec(Task* task) {
 				}
 				if (pback) push_obj(task, obj);
 			} break;
-			
+
 			case OP_JUMPF: {
 				size_t addr = read_addr(task);
 				uint8_t pback = read_byte(task);
@@ -3213,16 +3332,16 @@ static void task_exec(Task* task) {
 				}
 				if (pback) push_obj(task, obj);
 			} break;
-			
+
 			case OP_VAR: {
 				const char* name = read_str(task);
 				push_obj(task, get_var(task, name));
 			} break;
-			
+
 			case OP_STORE: {
 				uint8_t local = read_byte(task);
 				size_t count = read_addr(task);
-				
+
 				for (size_t i = 0; i < count; i++) {
 					const char* name = read_str(task);
 					Object* value = pop_value(task);
@@ -3233,14 +3352,14 @@ static void task_exec(Task* task) {
 					}
 				}
 			} break;
-			
+
 			case OP_POS:
 			case OP_NEG:
 			case OP_NOT: {
 				if (op != OP_NOT) {
 					task->frame->ln = read_addr(task);
 				}
-				
+
 				Object* obj = pop_value(task);
 
 				int err = 0;
@@ -3255,8 +3374,7 @@ static void task_exec(Task* task) {
 						Vector* args = vec_serve(1);
 						vec_push(args, obj);
 
-						call_obj(task, obj, args, 1);
-						if (task->state != TASK_ERROR) task_exec(task);
+						call_fobj(func, args);
 
 						if (op == OP_NOT) {
 							Object* obj = pop_value(task);
@@ -3289,7 +3407,7 @@ static void task_exec(Task* task) {
 				VarMap* map = get_map(task);
 				map = map->next;
 			} break;
-			
+
 			case OP_JUMPP: {
 				size_t count = read_addr(task);
 				for (size_t i = 0; i < count; i++) {
@@ -3298,7 +3416,7 @@ static void task_exec(Task* task) {
 				}
 				set_addr(task, read_addr(task));
 			} break;
-			
+
 			case OP_FUNCDEF: {
 				const char* name = read_str(task);
 
@@ -3312,12 +3430,12 @@ static void task_exec(Task* task) {
 				push_func(task, (char*)name, params, bc);
 				vec_free(params);
 			} break;
-			
+
 			case OP_CALL: {
 				size_t arg_count = read_addr(task);
 				size_t ln = read_addr(task);
 				task->frame->ln = ln;
-				
+
 				Vector* args = vec_serve(arg_count);
 				for (size_t i = 0; i < arg_count; i++) {
 					vec_pushfirst(args, pop_value(task));
@@ -3346,23 +3464,23 @@ static void task_exec(Task* task) {
 				push_obj(task, obj);
 				gc_collect_obj(obj);
 			} break;
-			
+
 			case OP_TABLE: {
 				push_newtable(task);
 			} break;
-			
+
 			case OP_SETINDEX: {
 				task->frame->ln = read_addr(task);
 				uint8_t push = read_byte(task);
 				Object* value = pop_value(task);
 				Object* key = pop_value(task);
 				Object* obj = pop_value(task);
-				
+
 				if (obj->kind != TABLE) {
 					assign_err(task, "unable to set index '%s'", obj_type(obj));
 					break;
 				}
-				
+
 				Table* table = obj->table;
 				int meta = 0;
 				if (obj->metatable != obj_nil) {
@@ -3375,23 +3493,22 @@ static void task_exec(Task* task) {
 						vec_push(args, key);
 						vec_push(args, value);
 
-						call_obj(task, func, args, 1);
-						if (task->state != TASK_ERROR) task_exec(task);
+						call_fobj(func, args);
 						pop_value(task);
 						meta = 1;
 					}
 				}
 
 				if (!meta) table_set(table, key, value);
-				
+
 				if (push) push_obj(task, obj);
 			} break;
-			
+
 			case OP_GETINDEX: {
 				task->frame->ln = read_addr(task);
 				Object* key = pop_value(task);
 				Object* obj = pop_value(task);
-				
+
 				if (obj->kind == TABLE) {
 					Table* table = obj->table;
 					int meta = 0;
@@ -3409,7 +3526,7 @@ static void task_exec(Task* task) {
 							meta = 1;
 						}
 					}
-					
+
 					if (!meta) push_obj(task, table_get(table, key));
 				} else {
 					assign_err(task, "unable to get index '%s'", obj_type(obj));
@@ -3437,13 +3554,13 @@ static void task_exec(Task* task) {
 					else vec_push(leftside, pop_nvalue(task, 2));
 					ui8_array_push(kinds, kind);
 				}
-				
+
 				uint8_t err = 0;
 				for (size_t i = 0; i < assign_count; i++) {
 					size_t ri = assign_count - i - 1;
 					uint8_t kind = ui8_array_get(kinds, ri);
 					Object* value = vec_get(objects, i);
-					
+
 					if (!err) {
 						if (kind) {
 							const char* name = vec_get(leftside, ri);
@@ -3469,8 +3586,7 @@ static void task_exec(Task* task) {
 										vec_push(args, key);
 										vec_push(args, value);
 
-										call_obj(task, func, args, 1);
-										if (task->state != TASK_ERROR) task_exec(task);
+										call_fobj(func, args);
 										err = task->state == TASK_ERROR;
 										pop_value(task);
 										meta = 1;
@@ -3526,7 +3642,7 @@ static void task_exec(Task* task) {
 					vec_push(names, (char*)read_str(task));
 				}
 				size_t pos = read_addr(task);
-				
+
 				Object* iter_obj = peek_value(task);
 				int done = 0;
 				int used = 0;
@@ -3562,13 +3678,10 @@ static void task_exec(Task* task) {
 					Object* func = table_get(mtable, new_str(gc_strdup("__next")));
 
 					if (func != obj_nil) {
-						Vector* args = vec_create(1);
+						Vector* args = vec_serve(1);
 						vec_push(args, iter_obj);
-
-						call_obj(task, func, args, 1);
-						printf("start\n");
-						if (task->state != TASK_ERROR) task_exec(task);
-						printf("end\n");
+						
+						call_fobj(func, args);
 						
 						Object* ret = pop_tvalue(task);
 						if (ret->kind == TUPLE) {
@@ -3577,12 +3690,11 @@ static void task_exec(Task* task) {
 								size_t j = i + 1;
 								if (j >= vec_count(ret->tuple)) break;
 								set_var(task, (const char*)vec_get(names, i), vec_get(ret->tuple, j));
+								used++;
 							}
-						} else done = obj_check(ret);
+						} else done = !obj_check(ret);
 					}
-				} else {
-					assign_err(task, "iteration fatal error");
-				}
+				} else assign_err(task, "iteration fatal error");
 
 				if (done) {
 					set_addr(task, pos);
@@ -3605,9 +3717,13 @@ static void task_exec(Task* task) {
 				frame = next;
 			}
 			task->frame = NULL;
+			task->frame_count = 0;
 		}
 
 		if (task->state != TASK_RUNNING) break;
+		#ifdef TUG_DEBUG
+		prev_op = op;
+		#endif
 
 		gc_run();
 	}
@@ -3615,7 +3731,7 @@ static void task_exec(Task* task) {
 
 static void task_run(Task* task) {
 	task->state = TASK_RUNNING;
-	
+
 	while (task->state == TASK_RUNNING) {
 		task_exec(task);
 	}
@@ -3700,16 +3816,16 @@ static void* gc_malloc(size_t size) {
 
 static void* gc_realloc(void* ptr, size_t new_size) {
 	if (!ptr) return gc_malloc(new_size);
-	
+
 	GCHeader* old_header = ((GCHeader*)ptr) - 1;
 	size_t old_size = old_header->size;
-	
+
 	GCHeader* new_header = realloc(old_header, sizeof(GCHeader) + new_size);
 	if (!new_header) return NULL;
-	
+
 	new_header->size = new_size;
 	gc_size += new_size - old_size;
-	
+
 	return (void*)(new_header + 1);
 }
 
@@ -3717,7 +3833,7 @@ static void* gc_calloc(size_t nmemb, size_t size) {
 	size_t total = nmemb * size;
 	void* ptr = gc_malloc(total);
 	if (ptr) memset(ptr, 0, total);
-	
+
 	return ptr;
 }
 
@@ -3732,7 +3848,7 @@ static char* gc_strdup(const char* str) {
 	size_t len = strlen(str) + 1;
 	char* new_str = gc_malloc(len);
 	memcpy(new_str, str, len);
-	
+
 	return new_str;
 }
 
@@ -3759,13 +3875,15 @@ static void gc_mark_obj(Object* obj) {
 		Table* table = obj->table;
 		for (size_t i = 0; i < table->capacity; i++) {
 			TableEntry* entry = table->buckets[i];
-			
+
 			while (entry) {
 				gc_mark_obj(entry->key);
 				gc_mark_obj(entry->value);
 				entry = entry->next;
 			}
 		}
+		
+		gc_mark_obj(obj->metatable);
 	} else if (obj->kind == ITER_STR || obj->kind == ITER_TABLE) gc_mark_obj(obj->iter.obj);
 }
 
@@ -3790,6 +3908,20 @@ static void gc_mark_task(Task* task) {
 
 	for (size_t i = 0; i < vec_count(task->varmaps); i++) {
 		gc_mark_closure(vec_get(task->varmaps, i));
+	}
+	
+	gc_mark_closure(task->global);
+	
+	Frame* frame = task->frame;
+	while (frame) {
+		Vector* args = frame->args;
+		if (args) {
+			for (size_t i = 0; i < vec_count(args); i++) {
+				gc_mark_obj(vec_get(args, i));
+			}
+		}
+		gc_mark_obj(frame->ret);
+		frame = frame->next;
 	}
 }
 
@@ -3883,7 +4015,7 @@ tug_Object* tug_cfunc(const char* name, tug_CFunc func) {
 tug_Object* tug_tuple(void) {
 	Object* obj = obj_create(TUPLE);
 	obj->tuple = vec_create();
-	
+
 	return gc_obj(obj);
 }
 
@@ -3899,7 +4031,7 @@ void tug_tuplepush(tug_Object* tuple, tug_Object* obj) {
 
 tug_Object* tug_tuplepop(tug_Object* tuple) {
 	tug_Object* obj = vec_pop(tuple->tuple);
-	
+
 	return obj ? obj : obj_nil;
 }
 
@@ -3957,14 +4089,14 @@ void tug_setvar(tug_Task* T, const char* name, tug_Object* value) {
 tug_Object* tug_getvar(tug_Task* T, const char* name) {
 	VarMap* map = vec_peek(T->varmaps);
 	tug_Object* res = (tug_Object*)varmap_get(map, name);
-	
+
 	return res ? res : obj_nil;
 }
 
 int tug_hasvar(tug_Task* T, const char* name) {
 	VarMap* map = vec_peek(T->varmaps);
 	tug_Object* res = (tug_Object*)varmap_get(map, name);
-	
+
 	return res ? 1 : 0;
 }
 
@@ -3975,14 +4107,14 @@ void tug_setglobal(tug_Task* T, const char* name, tug_Object* value) {
 tug_Object* tug_getglobal(tug_Task* T, const char* name) {
 	VarMap* map = T->global;
 	tug_Object* res = (tug_Object*)varmap_get(map, name);
-	
+
 	return res ? res : obj_nil;
 }
 
 int tug_hasglobal(tug_Task* T, const char* name) {
 	VarMap* map = T->global;
 	tug_Object* res = (tug_Object*)varmap_get(map, name);
-	
+
 	return res ? 1 : 0;
 }
 
@@ -4088,7 +4220,7 @@ static void append_str(char** buf, size_t* len, const char* fmt, ...) {
 char* tug_geterr(tug_Task* T) {
 	char* buf = NULL;
 	size_t len = 0;
-	
+
 	if (T->info != NULL) {
 		append_str(&buf, &len, "stack traceback:\n");
 		Info* info = T->info;
@@ -4110,7 +4242,7 @@ char* tug_geterr(tug_Task* T) {
 tug_Task* tug_task(const char* src, const char* code, char* errmsg) {
 	Bytecode* bc = gen_bc(src, code, errmsg);
 	if (!bc) return NULL;
-	
+
 	tug_Task* task = task_create(src, bc);
 	return task;
 }

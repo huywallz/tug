@@ -5,23 +5,23 @@ typedef struct tug_Task tug_Task;
 typedef struct tug_Object tug_Object;
 
 typedef enum {
-	TUG_STR,
-	TUG_NUM,
-	TUG_TRUE,
-	TUG_FALSE,
-	TUG_NIL,
-	TUG_FUNC,
-	TUG_TABLE,
-	TUG_TUPLE,
-	TUG_UNKNOWN,
+        TUG_STR,
+        TUG_NUM,
+        TUG_TRUE,
+        TUG_FALSE,
+        TUG_NIL,
+        TUG_FUNC,
+        TUG_TABLE,
+        TUG_TUPLE,
+        TUG_UNKNOWN,
 } tug_Type;
 
 typedef enum {
-	TUG_NEW,
-	TUG_PAUSED,
-	TUG_ALIVE,
-	TUG_ERROR,
-	TUG_DEAD,
+        TUG_NEW,
+        TUG_PAUSED,
+        TUG_ALIVE,
+        TUG_ERROR,
+        TUG_DEAD,
 } tug_TaskState;
 
 void tug_init(void);

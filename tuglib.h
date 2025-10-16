@@ -15,82 +15,102 @@
 #define tuglib_isdead(T) (tug_getstate(T) == TUG_DEAD)
 #define tuglib_isyield(T) (tuglib_isnew(T) || tuglib_ispaused(T))
 
+static int tuglib_hasmetatable(tug_Object* obj) {
+	if (tug_gettype(obj) == TUG_TABLE) return tug_getmetatable(obj) != tug_nil;
+	return 0;
+}
+
+static tug_Object* tuglib_getmetafield(tug_Object* obj, const char* key) {
+	if (!tuglib_hasmetatable(obj)) return tug_nil;
+	tug_Object* mtable = tug_getmetatable(obj);
+	return tug_getindex(mtable, tug_str(key));
+}
+
+static int tuglib_setmetafield(tug_Object* obj, const char* key, tug_Object* value) {
+	if (!tuglib_hasmetatable(obj)) return 0;
+	tug_Object* mtable = tug_getmetatable(obj);
+	tug_setindex(mtable, tug_str(key), value);
+	
+	return 1;
+}
+
 static const char* tuglib_typename(tug_Type type) {
-    switch (type) {
-        case TUG_STR: return "str";
-        case TUG_NUM: return "num";
-	    case TUG_TRUE:
-	    case TUG_FALSE: return "bool";
-        case TUG_NIL: return "nil";
-        case TUG_FUNC: return "func";
-        case TUG_TABLE: return "table";
-        case TUG_TUPLE:
-        case TUG_UNKNOWN:
-        default: return "unknown";
-    }
+	switch (type) {
+		case TUG_STR: return "str";
+		case TUG_NUM: return "num";
+			case TUG_TRUE:
+			case TUG_FALSE: return "bool";
+		case TUG_NIL: return "nil";
+		case TUG_FUNC: return "func";
+		case TUG_TABLE: return "table";
+		case TUG_TUPLE:
+		case TUG_UNKNOWN:
+		default: return "unknown";
+	}
 }
 
 static tug_Object* tuglib_checkany(tug_Task* T, size_t idx) {
-    if (!tug_hasarg(T, idx)) {
-        tug_err(T, "missing argument #%zu", idx + 1);
-    }
+	if (!tug_hasarg(T, idx)) {
+		tug_err(T, "missing argument #%zu", idx + 1);
+	}
 
-    return tug_getarg(T, idx);
+	return tug_getarg(T, idx);
 }
 
 static tug_Object* tuglib_checktype(tug_Task* T, size_t idx, tug_Type expected) {
-    tug_Object* obj = tuglib_checkany(T, idx);
-    tug_Type type = tug_gettype(obj);
-    if (type != expected) {
-        tug_err(T, "argument #%zu expected '%s', got '%s'", idx + 1, tuglib_typename(expected), tuglib_typename(type));
-    }
+	tug_Object* obj = tuglib_checkany(T, idx);
+	tug_Type type = tug_gettype(obj);
+	if (type != expected) {
+		tug_err(T, "argument #%zu expected '%s', got '%s'", idx + 1, tuglib_typename(expected), tuglib_typename(type));
+	}
 
-    return obj;
+	return obj;
 }
 
 static const char* tuglib_checkstr(tug_Task* T, size_t idx) {
-    tug_Object* obj = tuglib_checktype(T, idx, TUG_STR);
-    if (tuglib_iserr(T)) return NULL;
+	tug_Object* obj = tuglib_checktype(T, idx, TUG_STR);
+	if (tuglib_iserr(T)) return NULL;
 
-    return tug_getstr(obj);
+	return tug_getstr(obj);
 }
 
 static double tuglib_checknum(tug_Task* T, size_t idx) {
-    tug_Object* obj = tuglib_checktype(T, idx, TUG_NUM);
-    if (tuglib_iserr(T)) return 0;
+	tug_Object* obj = tuglib_checktype(T, idx, TUG_NUM);
+	if (tuglib_iserr(T)) return 0;
 
-    return tug_getnum(obj);
+	return tug_getnum(obj);
 }
 
 static int tuglib_checkint(tug_Task* T, size_t idx) {
-    double num = tuglib_checknum(T, idx);
-    if (tuglib_iserr(T)) return 0;
+	double num = tuglib_checknum(T, idx);
+	if (tuglib_iserr(T)) return 0;
 
-    if (num < (double)INT_MIN || num > (double)INT_MAX || floor(num) != num) {
-        tug_err(T, "argument #%zu expected '<int>', got '<double>'", idx + 1);
-    }
-    
-    return (int)num;
+	if (num < (double)INT_MIN || num > (double)INT_MAX || floor(num) != num) {
+		tug_err(T, "argument #%zu expected '<int>', got '<double>'", idx + 1);
+	}
+
+	return (int)num;
 }
 
 static long tuglib_checklong(tug_Task* T, size_t idx) {
-    double num = tuglib_checknum(T, idx);
-    if (tuglib_iserr(T)) return 0;
+	double num = tuglib_checknum(T, idx);
+	if (tuglib_iserr(T)) return 0;
 
-    if (fabs(num) > 9007199254740992.0 || floor(num) != num) {
-        tug_err(T, "argument #%zu expected '<long>', got '<double>'", idx + 1);
-    }
-    
-    return (long)num;
+	if (fabs(num) > 9007199254740992.0 || floor(num) != num) {
+		tug_err(T, "argument #%zu expected '<long>', got '<double>'", idx + 1);
+	}
+
+	return (long)num;
 }
 
 static int tuglib_checkbool(tug_Task* T, size_t idx) {
-    tug_Object* obj = tuglib_checkany(T, idx);
-    tug_Type type = tug_gettype(obj);
-    if (type == TUG_TRUE) return 1;
-    else if (type == TUG_FALSE) return 0;
-    
-    tug_err(T, "argument #%zu expected 'bool', got '%s'", idx + 1, tuglib_typename(type));
+	tug_Object* obj = tuglib_checkany(T, idx);
+	tug_Type type = tug_gettype(obj);
+	if (type == TUG_TRUE) return 1;
+	else if (type == TUG_FALSE) return 0;
+
+	tug_err(T, "argument #%zu expected 'bool', got '%s'", idx + 1, tuglib_typename(type));
+	return -1;
 }
 
 #define tuglib_checknil(T, idx) (tuglib_checktype(T, idx, TUG_FUNC))
@@ -103,11 +123,11 @@ static int tuglib_checkbool(tug_Task* T, size_t idx) {
 #define tuglib_isstr(T, idx) tuglib_istype(T, idx, TUG_STR)
 
 static int tuglib_isbool(tug_Task* T, size_t idx) {
-    if (tuglib_isnone(T, idx)) return -1;
-    tug_Object* obj = tug_getarg(T, idx);
-    tug_Type type = tug_gettype(obj);
+	if (tuglib_isnone(T, idx)) return -1;
+	tug_Object* obj = tug_getarg(T, idx);
+	tug_Type type = tug_gettype(obj);
 
-    return type == TUG_TRUE || type == TUG_FALSE;
+	return type == TUG_TRUE || type == TUG_FALSE;
 }
 
 #define tuglib_isnil(T, idx) tuglib_istype(T, idx, TUG_NIL)
@@ -125,97 +145,109 @@ static int tuglib_isbool(tug_Task* T, size_t idx) {
 #define tuglib_optfunc(T, idx, def) (tuglib_isnone((T), (idx)) ? (def) : tuglib_checkfunc((T), (idx)))
 #define tuglib_opttable(T, idx, def) (tuglib_isnone((T), (idx)) ? (def) : tuglib_checktable((T), (idx)))
 
-char* tuglib_tostr(tug_Object* obj) {
-    switch (tug_gettype(obj)) {
-        case TUG_STR: return strdup(tug_getstr(obj));
-        case TUG_NUM: {
-            char* res = malloc(50);
-            snprintf(res, 50, "%.17g", tug_getnum(obj));
+#define tuglib_gettypename(obj) tuglib_typename(tug_gettype((obj)))
 
-            return res;
-        }
-        case TUG_TRUE: return strdup("true");
-        case TUG_FALSE: return strdup("false");
-        case TUG_NIL: return strdup("nil");
-        case TUG_FUNC: {
-            char* res = malloc(50);
-			snprintf(res, 50, "func: 0x%lx", tug_getid(obj));
-
-            return res;
-        }
-        case TUG_TABLE: {
-            char* res = malloc(50);
-			snprintf(res, 50, "table: 0x%lx", tug_getid(obj));
-
-            return res;
-        }
-        default: return strdup("<unknown>");
-    }
+static tug_Object* tuglib_tostr(tug_Object* obj) {
+	tug_Type obj_type = tug_gettype(obj);
+	switch (obj_type) {
+		case TUG_STR: return obj;
+		case TUG_NUM: {
+			char* res = malloc(50);
+			snprintf(res, 50, "%.17g", tug_getnum(obj));
+			tug_Object* str_obj = tug_str(res);
+			free(res);
+			return str_obj;
+		}
+		case TUG_TRUE: return tug_str("true");
+		case TUG_FALSE: return tug_str("false");
+		case TUG_NIL: return tug_str("nil");
+		case TUG_FUNC: {
+			char* res = malloc(50);
+			snprintf(res, 50, "%s: 0x%lx", obj_type == TUG_FUNC ? "func" : "table", tug_getid(obj));
+			tug_Object* str_obj = tug_str(res);
+			free(res);
+			return str_obj;
+		}
+		default: return tug_str("<unknown>");
+	}
 }
 
-void __tuglib_print(tug_Task* T) {
-    size_t argc = tug_getargc(T);
-    for (size_t i = 0; i < argc; i++) {
-        tug_Object* obj = tug_getarg(T, i);
+static void __tuglib_print(tug_Task* T) {
+	size_t argc = tug_getargc(T);
+	for (size_t i = 0; i < argc; i++) {
+		tug_Object* obj = tug_getarg(T, i);
 
-        char* str = tuglib_tostr(obj);
-        printf("%s%s", str, i + 1 == argc ? "" : "\t");
-        free(str);
-    }
+		tug_Object* str_obj = tuglib_tostr(obj);
+		printf("%s%s", tug_getstr(str_obj), i + 1 == argc ? "" : "\t");
+	}
 
-    printf("\n");
+	printf("\n");
 }
 
-void __tuglib_tostr(tug_Task* T) {
-    tug_Object* obj = tuglib_checkany(T, 0);
-    
-    char* str = tuglib_tostr(obj);
-    tug_ret(T, tug_str((const char*)str));
-    free(str);
+static void __tuglib_tostr(tug_Task* T) {
+	tug_Object* obj = tuglib_checkany(T, 0);
+
+	tug_Object* str_obj = tuglib_tostr(obj);
+	tug_ret(T, str_obj);
 }
 
-void __tuglib_type(tug_Task* T) {
-    tug_Object* obj = tuglib_checkany(T, 0);
-    
-    tug_ret(T, tug_str(tuglib_typename(tug_gettype(obj))));
+static void __tuglib_type(tug_Task* T) {
+	tug_Object* obj = tuglib_checkany(T, 0);
+
+	tug_Object* newtype = tuglib_getmetafield(obj, "__type");
+	if (newtype != tug_nil) tug_ret(T, newtype);
+	else tug_ret(T, tug_str(tuglib_typename(tug_gettype(obj))));
 }
 
-void __tuglib_setmetatable(tug_Task* T) {
-    tug_Object* table = tuglib_checktable(T, 0);
-    tug_Object* mtable = tuglib_checktable(T, 1);
-
-    tug_setmetatable(table, mtable);
-    tug_ret(T, table);
+static void __tuglib_len(tug_Task* T) {
+	tug_Object* obj = tuglib_checkany(T, 0);
+	tug_Object* func = tuglib_getmetafield(obj, "__len");
+	if (func != tug_nil) tug_call(T, func, obj);
+	else switch (tug_gettype(obj)) {
+		case TUG_STR:
+		case TUG_TABLE: {
+			tug_ret(T, tug_num((double)tug_getlen(obj)));
+		} break;
+		default: tug_err(T, "argument #1 expected 'table' or 'str', got '%s'", tuglib_gettypename(obj));
+	}
 }
 
-void __tuglib_getmetatable(tug_Task* T) {
-    tug_Object* table = tuglib_checktable(T, 0);
-    tug_Object* mtable = tug_getmetatable(table);
+static void __tuglib_setmetatable(tug_Task* T) {
+	tug_Object* table = tuglib_checktable(T, 0);
+	tug_Object* mtable = tuglib_checktable(T, 1);
 
-    if (mtable == tug_nil) return;
-    tug_Object* obj = tug_getindex(mtable, tug_str("__metatable"));
-    if (obj == tug_nil) tug_ret(T, mtable);
-    else tug_ret(T, obj);
+	tug_setmetatable(table, mtable);
+	tug_ret(T, table);
 }
 
-void __tuglib_test(tug_Task* T) {
-    tug_Object* obj = tuglib_checkfunc(T, 0);
+static void __tuglib_getmetatable(tug_Task* T) {
+	tug_Object* table = tuglib_checktable(T, 0);
+	tug_Object* mtable = tug_getmetatable(table);
 
-    tug_calls(T, obj, 0);
+	if (mtable == tug_nil) return;
+	tug_Object* obj = tug_getindex(mtable, tug_str("__metatable"));
+	if (obj == tug_nil) tug_ret(T, mtable);
+	else tug_ret(T, obj);
 }
 
-void tuglib_loadbuiltins(tug_Task* T) {
-    tug_setglobal(T, "print", tug_cfunc("print", __tuglib_print));
-    tug_setglobal(T, "tostr", tug_cfunc("tostr", __tuglib_tostr));
-    tug_setglobal(T, "type", tug_cfunc("type", __tuglib_type));
-    tug_setglobal(T, "setmetatable", tug_cfunc("setmetatable", __tuglib_setmetatable));
-    tug_setglobal(T, "getmetatable", tug_cfunc("getmetatable", __tuglib_getmetatable));
-    
-    tug_setglobal(T, "test", tug_cfunc("test", __tuglib_test));
+static void __tuglib_error(tug_Task* T) {
+	tug_Object* obj = tuglib_checkany(T, 0);
+	tug_Object* str_obj = tuglib_tostr(obj);
+	tug_err(T, "%s", tug_getstr(str_obj));
 }
 
-void tuglib_loadlibs(tug_Task* T) {
-    tuglib_loadbuiltins(T);
+static void tuglib_loadbuiltins(tug_Task* T) {
+	tug_setglobal(T, "print", tug_cfunc("print", __tuglib_print));
+	tug_setglobal(T, "tostr", tug_cfunc("tostr", __tuglib_tostr));
+	tug_setglobal(T, "type", tug_cfunc("type", __tuglib_type));
+	tug_setglobal(T, "setmetatable", tug_cfunc("setmetatable", __tuglib_setmetatable));
+	tug_setglobal(T, "getmetatable", tug_cfunc("getmetatable", __tuglib_getmetatable));
+	tug_setglobal(T, "len", tug_cfunc("len", __tuglib_len));
+	tug_setglobal(T, "error", tug_cfunc("error", __tuglib_error));
+}
+
+static void tuglib_loadlibs(tug_Task* T) {
+	tuglib_loadbuiltins(T);
 }
 
 #endif
