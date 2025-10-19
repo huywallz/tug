@@ -65,12 +65,16 @@ size_t tug_getargc(tug_Task* T);
 tug_Object* tug_getarg(tug_Task* T, size_t idx);
 int tug_hasarg(tug_Task* T, size_t idx);
 
-void tug_calls(tug_Task* T, tug_Object* func, size_t n, ...);
-void tug_call(tug_Task* T, tug_Object* func, tug_Object* arg);
+tug_Object* tug_calls(tug_Task* T, tug_Object* func, size_t n, ...);
+tug_Object* tug_pcalls(tug_Task* T, int* errptr, tug_Object* func, size_t n, ...);
+tug_Object* tug_call(tug_Task* T, tug_Object* func, tug_Object* arg);
+tug_Object* tug_pcall(tug_Task* T, int* errptr, tug_Object* func, tug_Object* arg);
 void tug_rets(tug_Task* T, size_t n, ...);
 void tug_ret(tug_Task* T, tug_Object* obj);
+
 void tug_err(tug_Task* T, const char* fmt, ...);
-char* tug_geterr(tug_Task* T);
+const char* tug_getmsg(tug_Task* T);
+const char* tug_geterr(tug_Task* T);
 
 tug_Task* tug_task(const char* src, const char* code, char* errmsg);
 void tug_resume(tug_Task* T);

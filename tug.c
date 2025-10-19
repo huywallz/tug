@@ -2822,24 +2822,26 @@ typedef struct Frame {
 	size_t ln;
 	Bytecode* bc;
 	size_t iptr;
+	size_t scope;
 	size_t base;
-	size_t ret_count;
 	Vector* args;
 	Object* ret;
+	int protected;
 	struct Frame* next;
 } Frame;
 
-static Frame* frame_create(const char* src, const char* name, Bytecode* bc, size_t base, Vector* args) {
+static Frame* frame_create(const char* src, const char* name, Bytecode* bc, size_t scope, size_t base, Vector* args) {
 	Frame* frame = gc_malloc(sizeof(Frame));
 	frame->src = gc_strdup(src);
 	frame->name = gc_strdup(name);
 	frame->bc = bc;
 	if (bc) bc->ref++;
 	frame->iptr = 0;
+	frame->scope = scope;
 	frame->base = base;
-	frame->ret_count = 0;
 	frame->args = args;
 	frame->ret = obj_nil;
+	frame->protected = 0;
 	frame->next = NULL;
 
 	return frame;
@@ -2886,7 +2888,7 @@ static void gc_collect_closure(VarMap* varmap);
 static void gc_collect_task(Task* task);
 static Task* task_create(const char* src, Bytecode* bc) {
 	Task* task = gc_malloc(sizeof(Task));
-	task->frame = frame_create(src, "<main>", bc, 0, NULL);
+	task->frame = frame_create(src, "<main>", bc, 0, 0, NULL);
 	task->varmaps = vec_create();
 	VarMap* map = varmap_create();
 	vec_push(task->varmaps, map);
@@ -2902,6 +2904,8 @@ static Task* task_create(const char* src, Bytecode* bc) {
 
 	return task;
 }
+
+#define get_base(T) ((!(T)->frame) ? 0 : (T)->frame->base)
 
 static uint8_t read_byte(Task* task) {
 	Frame* frame = task->frame;
@@ -3010,7 +3014,7 @@ static Vector* pop_nvalue(Task* task, size_t n) {
 	for (size_t i = 0; i < n; i++) {
 		Object* obj;
 
-		if (frame->base >= stack->count) {
+		if (get_base(task) >= stack->count) {
 			obj = obj_nil;
 		} else {
 			obj = vec_pop(stack);
@@ -3041,17 +3045,21 @@ static Object* pop_tvalue(Task* task) {
 	Frame* frame = task->frame;
 	Vector* stack = task->stack;
 		
-	if (frame->base >= stack->count) return obj_nil;
+	if (get_base(task) >= stack->count) return obj_nil;
 
 	return vec_pop(stack);
 }
 
-static Object* peek_value(Task* task) {
+static Object* peek_tvalue(Task* task) {
 	Frame* frame = task->frame;
 	Vector* stack = task->stack;
 
-	if (frame->base >= stack->count) return obj_nil;
-	Object* obj = vec_peek(stack);
+	if (get_base(task) >= stack->count) return obj_nil;
+	return vec_peek(stack);
+}
+
+static Object* peek_value(Task* task) {
+	Object* obj = peek_tvalue(task);
 	if (obj->kind == TUPLE) return vec_peek(obj->tuple);
 	return obj;
 }
@@ -3095,7 +3103,7 @@ static Object* get_arg(Task* task, size_t idx) {
 
 jmp_buf cfunc_jmp_buf;
 
-void call_obj(Task* task, Object* obj, Vector* args, int f) {
+void call_obj(Task* task, Object* obj, Vector* args, int f, int protected) {
 	if (obj->kind == TABLE && obj->metatable != obj_nil) {
 		Table* mtable = obj->metatable->table;
 		vec_pushfirst(args, obj);
@@ -3112,8 +3120,9 @@ void call_obj(Task* task, Object* obj, Vector* args, int f) {
 		return;
 	}
 
-	Frame* new_frame = frame_create(obj->func.src, obj->func.name, obj->func.bc, vec_count(task->stack), args);
+	Frame* new_frame = frame_create(obj->func.src, obj->func.name, obj->func.bc, vec_count(task->varmaps), vec_count(task->stack), args);
 	new_frame->next = task->frame;
+	task->frame->protected = protected;
 	task->frame = new_frame;
 	task->frame_count++;
 
@@ -3142,9 +3151,18 @@ void call_obj(Task* task, Object* obj, Vector* args, int f) {
 	}
 }
 
+static void set_ret(Task* task, Object* obj) {
+	if (task->frame) task->frame->ret = obj;
+}
+
+static Object* get_ret(Task* task) {
+	if (task->frame) return task->frame->ret;
+	return obj_nil;
+}
+
 static void gc_run(void);
 static void task_exec(Task* task) {
-	#define call_fobj(_obj, _args) call_obj(task, (_obj), (_args), 1); if (!tuglib_iserr(task)) {task_exec(task); if (tuglib_iserr(task)) break;}
+	#define call_fobj(_obj, _args) call_obj(task, (_obj), (_args), 1, 0); if (!tuglib_iserr(task)) {task_exec(task); if (tuglib_iserr(task)) break;}
 	if (task->frame->bc == NULL) return;
 
 	#if TUG_DEBUG
@@ -3203,7 +3221,7 @@ static void task_exec(Task* task) {
 						vec_push(args, o1);
 						vec_push(args, o2);
 
-						call_obj(task, func, args, 1);
+						call_obj(task, func, args, 1, 0);
 						break;
 					}
 				} else if (op == OP_EQ || op == OP_NE) {
@@ -3298,7 +3316,11 @@ static void task_exec(Task* task) {
 				frame_free(task->frame, NULL);
 				task->frame = next_frame;
 				task->frame_count--;
+				set_ret(task, peek_tvalue(task));
 				if (task->frame == NULL) task->state = TASK_END;
+				else {
+					task->frame->protected = 0;
+				}
 
 				vec_pop(task->varmaps);
 				return;
@@ -3451,7 +3473,7 @@ static void task_exec(Task* task) {
 				}
 
 				Object* obj = pop_value(task);
-				call_obj(task, obj, args, 1);
+				call_obj(task, obj, args, 1, 0);
 			} break;
 
 			case OP_TUPLE: {
@@ -3531,7 +3553,7 @@ static void task_exec(Task* task) {
 							vec_push(args, obj);
 							vec_push(args, key);
 
-							call_obj(task, func, args, 1);
+							call_obj(task, func, args, 1, 0);
 							meta = 1;
 						}
 					}
@@ -3631,7 +3653,7 @@ static void task_exec(Task* task) {
 						Vector* args = vec_serve(1);
 						vec_push(args, obj);
 
-						call_obj(task, func, args, 1);
+						call_obj(task, func, args, 1, 0);
 						break;
 					}
 				}
@@ -3719,14 +3741,24 @@ static void task_exec(Task* task) {
 		}
 
 		if (task->state == TASK_ERROR) {
-			Frame* frame = task->frame;
-			while (frame) {
+			while (task->frame) {
+				Frame* frame = task->frame;
+
+				if (frame->protected == 1) {
+					info_free(task->info);
+					task->info = NULL;
+					frame->protected = 0;
+					break;
+				} else {
+					task->stack->count = frame->base;
+					task->varmaps->count = frame->scope;
+				}
+
 				Frame* next = frame->next;
 				frame_free(frame, &task->info);
-				frame = next;
+				task->frame = next;
+				task->frame_count--;
 			}
-			task->frame = NULL;
-			task->frame_count = 0;
 		}
 
 		if (task->state != TASK_RUNNING) break;
@@ -3987,18 +4019,6 @@ static inline void gc_close(void) {
 	vec_free(tasks);
 }
 
-void __tug_test(Task* task) {
-	printf("hi\n");
-	assign_err(task, "cool");
-}
-
-static void load_lib(Task* task) {
-	VarMap* map = task->global;
-	Object* funcobj = obj_cfunc("test", __tug_test);
-	varmap_put(map, "test", funcobj);
-	gc_collect_obj(funcobj);
-}
-
 // API
 
 tug_Object* tug_true = obj_true;
@@ -4143,7 +4163,7 @@ int tug_hasarg(tug_Task* T, size_t idx) {
 	return 1;
 }
 
-void tug_calls(tug_Task* T, tug_Object* func, size_t n, ...) {
+tug_Object* tug_calls(tug_Task* T, tug_Object* func, size_t n, ...) {
 	va_list args;
 	va_start(args, n);
 
@@ -4152,11 +4172,30 @@ void tug_calls(tug_Task* T, tug_Object* func, size_t n, ...) {
 		vec_push(fargs, va_arg(args, tug_Object*));
 	}
 
-	call_obj(T, func, fargs, 1);
+	call_obj(T, func, fargs, 1, 0);
 	if (T->state != TASK_ERROR) task_exec(T);
+	return get_ret(T);
 }
 
-void tug_call(tug_Task* T, tug_Object* func, tug_Object* arg) {
+tug_Object* tug_pcalls(tug_Task* T, int* errptr, tug_Object* func, size_t n, ...) {
+	va_list args;
+	va_start(args, n);
+
+	Vector* fargs = vec_serve(n);
+	for (size_t i = 0; i < n; i++) {
+		vec_push(fargs, va_arg(args, tug_Object*));
+	}
+
+	call_obj(T, func, fargs, 1, 1);
+	if (T->state != TASK_ERROR) task_exec(T);
+	if (errptr) (*errptr) = (T->state == TASK_ERROR);
+	if (T->state == TASK_ERROR) {
+		T->state = TASK_RUNNING;
+	}
+	return get_ret(T);
+}
+
+tug_Object* tug_call(tug_Task* T, tug_Object* func, tug_Object* arg) {
 	Vector* args;
 	if (arg->kind == TUPLE) {
 		args = arg->tuple;
@@ -4165,8 +4204,27 @@ void tug_call(tug_Task* T, tug_Object* func, tug_Object* arg) {
 		vec_push(args, arg);
 	}
 
-	call_obj(T, func, args, 0);
+	call_obj(T, func, args, 0, 0);
 	if (T->state != TASK_ERROR) task_exec(T);
+	return get_ret(T);
+}
+
+tug_Object* tug_pcall(tug_Task* T, int* errptr, tug_Object* func, tug_Object* arg) {
+	Vector* args;
+	if (arg->kind == TUPLE) {
+		args = arg->tuple;
+	} else {
+		args = vec_serve(1);
+		vec_push(args, arg);
+	}
+
+	call_obj(T, func, args, 0, 1);
+	if (T->state != TASK_ERROR) task_exec(T);
+	if (errptr) (*errptr) = (T->state == TASK_ERROR);
+	if (T->state == TASK_ERROR) {
+		T->state = TASK_RUNNING;
+	}
+	return get_ret(T);
 }
 
 void tug_rets(tug_Task* T, size_t n, ...) {
@@ -4220,13 +4278,17 @@ static void append_str(char** buf, size_t* len, const char* fmt, ...) {
 
 	if (n < 0) return;
 
-	*buf = realloc(*buf, *len + n + 1);
+	*buf = gc_realloc(*buf, *len + n + 1);
 	memcpy(*buf + *len, tmp, n);
 	*len += n;
 	(*buf)[*len] = '\0';
 }
 
-char* tug_geterr(tug_Task* T) {
+const char* tug_getmsg(tug_Task* T) {
+	return T->msg;
+}
+
+const char* tug_geterr(tug_Task* T) {
 	char* buf = NULL;
 	size_t len = 0;
 
@@ -4244,6 +4306,7 @@ char* tug_geterr(tug_Task* T) {
 	}
 
 	append_str(&buf, &len, "error: %s", T->msg);
+	new_str(buf);
 
 	return buf;
 }

@@ -236,6 +236,22 @@ static void __tuglib_error(tug_Task* T) {
 	tug_err(T, "%s", tug_getstr(str_obj));
 }
 
+static void __tuglib_pcall(tug_Task* T) {
+	tug_Object* func = tuglib_checkfunc(T, 0);
+	tug_Object* args = tug_tuple();
+	for (size_t i = 1; i < tug_getargc(T); i++) {
+		tug_tuplepush(args, tug_getarg(T, i));
+	}
+
+	int err = 0;
+	tug_Object* res = tug_pcall(T, &err, func, args);
+	if (err) {
+		tug_rets(T, 2, tug_false, tug_str(tug_getmsg(T)));
+	} else {
+		tug_rets(T, 2, tug_true, res);
+	}
+}
+
 static void tuglib_loadbuiltins(tug_Task* T) {
 	tug_setglobal(T, "print", tug_cfunc("print", __tuglib_print));
 	tug_setglobal(T, "tostr", tug_cfunc("tostr", __tuglib_tostr));
@@ -244,6 +260,7 @@ static void tuglib_loadbuiltins(tug_Task* T) {
 	tug_setglobal(T, "getmetatable", tug_cfunc("getmetatable", __tuglib_getmetatable));
 	tug_setglobal(T, "len", tug_cfunc("len", __tuglib_len));
 	tug_setglobal(T, "error", tug_cfunc("error", __tuglib_error));
+	tug_setglobal(T, "pcall", tug_cfunc("pcall", __tuglib_pcall));
 }
 
 static void tuglib_loadlibs(tug_Task* T) {

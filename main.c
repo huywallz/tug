@@ -34,9 +34,8 @@ int main() {
     tug_resume(task);
     
     if (tug_getstate(task) == TUG_ERROR) {
-        char* msg = tug_geterr(task);
+        const char* msg = tug_geterr(task);
         printf("%s\n", msg);
-        free(msg);
     }
 
     tug_close();

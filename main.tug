@@ -1,28 +1,6 @@
-func range(start, stop, step)
-    if stop == nil then
-        stop = start
-        start = 0
-    end
-    
-    mt := {}
-    t := setmetatable({}, mt)
+success, res := pcall(func()
+    print(1 + n)
+    return 123
+end)
 
-    func iter()
-        return t
-    end
-    mt.__iter = iter
-
-    func next()
-        if (step > 0 and start >= stop) or (step < 0 and start <= stop) then return false end
-        value := start
-        start = start + step
-        return true, value
-    end
-    mt.__next = next
-
-    return t
-end
-
-for i in range(10) do
-    print(i)
-end
+print(success, res)
