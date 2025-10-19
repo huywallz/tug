@@ -332,6 +332,22 @@ static void __tuglib_assert(tug_Task* T) {
 	}
 }
 
+static void __tuglib_rawget(tug_Task* T) {
+	tug_Object* table = tuglib_checktable(T, 0);
+	tug_Object* key = tuglib_checkany(T, 1);
+
+	tug_Object* value = tug_getindex(table, key);
+	tug_ret(T, value);
+}
+
+static void __tuglib_rawset(tug_Task* T) {
+	tug_Object* table = tuglib_checktable(T, 0);
+	tug_Object* key = tuglib_checkany(T, 1);
+	tug_Object* value = tuglib_checkany(T, 2);
+
+	tug_setindex(table, key, value);
+}
+
 static void tuglib_loadbuiltins(tug_Task* T) {
 	tug_setglobal(T, "print", tug_cfunc("print", __tuglib_print));
 	tug_setglobal(T, "tostr", tug_cfunc("tostr", __tuglib_tostr));
@@ -343,6 +359,8 @@ static void tuglib_loadbuiltins(tug_Task* T) {
 	tug_setglobal(T, "pcall", tug_cfunc("pcall", __tuglib_pcall));
 	tug_setglobal(T, "tonum", tug_cfunc("tonum", __tuglib_tonum));
 	tug_setglobal(T, "assert", tug_cfunc("assert", __tuglib_assert));
+	tug_setglobal(T, "rawget", tug_cfunc("rawget", __tuglib_rawget));
+	tug_setglobal(T, "rawset", tug_cfunc("rawset", __tuglib_rawset));
 }
 
 static void tuglib_loadlibs(tug_Task* T) {
