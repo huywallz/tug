@@ -3109,6 +3109,11 @@ void call_obj(Task* task, Object* obj, Vector* args, int f, int protected) {
 		vec_pushfirst(args, obj);
 		Object* func = table_get(mtable, new_str(gc_strdup("__call")));
 		if (func != obj_nil) obj = func;
+		if (obj->kind != FUNC) {
+			if (f) vec_free(args);
+			assign_err(task, "metamethod '__call' must be 'func', got '%s'", obj_type(obj));
+			return;
+		}
 	}
 	if (obj->kind != FUNC) {
 		if (f) vec_free(args);
@@ -3201,27 +3206,46 @@ static void task_exec(Task* task) {
 				if (o1->kind == TABLE && o1->metatable->kind == TABLE) {
 					Table* mtable = o1->metatable->table;
 
-					Object* func = NULL;
+					const char* method_name = NULL;
 					switch (op) {
-						case OP_ADD: func = table_get(mtable, new_str(gc_strdup("__add"))); break;
-						case OP_SUB: func = table_get(mtable, new_str(gc_strdup("__sub"))); break;
-						case OP_MUL: func = table_get(mtable, new_str(gc_strdup("__mul"))); break;
-						case OP_DIV: func = table_get(mtable, new_str(gc_strdup("__div"))); break;
-						case OP_MOD: func = table_get(mtable, new_str(gc_strdup("__mod"))); break;
-						case OP_GT: func = table_get(mtable, new_str(gc_strdup("__gt"))); break;
-						case OP_LT: func = table_get(mtable, new_str(gc_strdup("__lt"))); break;
-						case OP_GE: func = table_get(mtable, new_str(gc_strdup("__ge"))); break;
-						case OP_LE: func = table_get(mtable, new_str(gc_strdup("__le"))); break;
-						case OP_EQ: func = table_get(mtable, new_str(gc_strdup("__eq"))); break;
-						case OP_NE: func = table_get(mtable, new_str(gc_strdup("__ne"))); break;
+						case OP_ADD: method_name = "__add"; break;
+						case OP_SUB: method_name = "__sub"; break;
+						case OP_MUL: method_name = "__mul"; break;
+						case OP_DIV: method_name = "__div"; break;
+						case OP_MOD: method_name = "__mod"; break;
+						case OP_GT: method_name = "__gt"; break;
+						case OP_LT: method_name = "__lt"; break;
+						case OP_GE: method_name = "__ge"; break;
+						case OP_LE: method_name = "__le"; break;
+						case OP_EQ: method_name = "__eq"; break;
+						case OP_NE: method_name = "__ne"; break;
 					}
 
+					Object* func = table_get(mtable, new_str(gc_strdup(method_name)));
 					if (func != obj_nil) {
 						Vector* args = vec_serve(2);
 						vec_push(args, o1);
 						vec_push(args, o2);
 
-						call_obj(task, func, args, 1, 0);
+						Object* args_obj = obj_create(TUPLE);
+						args_obj->tuple = args;
+						gc_collect_obj(args_obj);
+
+						Object* res = tug_call(task, func, args_obj);
+						switch (op) {
+							case OP_GT:
+							case OP_LT:
+							case OP_GE:
+							case OP_LE:
+							case OP_EQ:
+							case OP_NE: {
+								if (tug_gettype(res) != TRUE && tug_gettype(res) != FALSE && tug_gettype(res) != NIL) {
+									assign_err(task, "metamethod '%s' must return 'bool', got '%s'", method_name, obj_type(res));
+								} else {
+									push_obj(task, res);
+								}
+							} break;
+						}
 						break;
 					}
 				} else if (op == OP_EQ || op == OP_NE) {
@@ -3409,7 +3433,9 @@ static void task_exec(Task* task) {
 
 						if (op == OP_NOT) {
 							Object* obj = pop_value(task);
-							push_obj(task, obj_truth(!obj_check(obj)));
+							if (obj == obj_true) push_obj(task, obj_nil);
+							else if (obj == obj_false || obj == obj_nil) push_obj(task, obj_true);
+							else assign_err(task, "metamethod '__truth' must return 'bool', got '%s'", obj_type(obj));
 						}
 					} else err = 1;
 				} else if (op == OP_NOT) {
@@ -3645,6 +3671,7 @@ static void task_exec(Task* task) {
 			case OP_ITER: {
 				task->frame->ln = read_addr(task);
 				Object* obj = pop_value(task);
+				int meta = 0;
 				if (obj->kind == TABLE && obj->metatable != obj_nil) {
 					Table* mtable = obj->metatable->table;
 					Object* func = table_get(mtable, new_str(gc_strdup("__iter")));
@@ -3653,13 +3680,21 @@ static void task_exec(Task* task) {
 						Vector* args = vec_serve(1);
 						vec_push(args, obj);
 
-						call_obj(task, func, args, 1, 0);
-						break;
+						Object* args_obj = obj_create(TUPLE);
+						args_obj->tuple = args;
+						gc_collect_obj(args_obj);
+
+						obj = tug_call(task, func, args_obj);
+						meta = 1;
 					}
 				}
 				Object* iter_obj = obj_iter(obj);
 				if (iter_obj == NULL) {
-					assign_err(task, "'%s' is not iterable", obj_type(obj));
+					if (meta) {
+						assign_err(task, "metamethod '__iter' must return an iterable, got '%s'", obj_type(obj));
+					} else {
+						assign_err(task, "unable to iterate '%s'", obj_type(obj));
+					}
 				} else {
 					push_obj(task, gc_obj(iter_obj));
 				}
@@ -4077,7 +4112,7 @@ tug_Type tug_gettype(tug_Object* obj) {
 		case NIL: return TUG_NIL;
 		case FUNC: return TUG_FUNC;
 		case TABLE: return TUG_TABLE;
-		case TUPLE: return TUG_TUPLE;
+		case TUPLE: return tug_gettype(obj->tuple->count > 0 ? vec_get(obj->tuple, 0) : obj_nil);
 		default: return TUG_UNKNOWN;
 	}
 }

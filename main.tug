@@ -1,6 +1,7 @@
-success, res := pcall(func()
-    print(1 + n)
+mt := {}
+mt.__gt = func(a, b)
     return 123
-end)
+end
 
-print(success, res)
+t := setmetatable({}, mt)
+t > 4

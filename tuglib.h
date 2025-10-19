@@ -186,6 +186,18 @@ static void __tuglib_print(tug_Task* T) {
 
 static void __tuglib_tostr(tug_Task* T) {
 	tug_Object* obj = tuglib_checkany(T, 0);
+	tug_Object* tostr = tuglib_getmetafield(obj, "__tostr");
+	if (tostr != tug_nil) {
+		tug_Object* res = tug_call(T, tostr, obj);
+		if (tuglib_iserr(T)) return;
+		tug_Type res_type = tug_gettype(res);
+		if (res_type != TUG_STR) {
+			tug_err(T, "metamethod '__tostr' must return 'str', got '%s'", tuglib_gettypename(res));
+			return;
+		}
+		tug_ret(T, res);
+		return;
+	}
 
 	tug_Object* str_obj = tuglib_tostr(obj);
 	tug_ret(T, str_obj);
@@ -195,15 +207,28 @@ static void __tuglib_type(tug_Task* T) {
 	tug_Object* obj = tuglib_checkany(T, 0);
 
 	tug_Object* newtype = tuglib_getmetafield(obj, "__type");
-	if (newtype != tug_nil) tug_ret(T, newtype);
+	if (newtype != tug_nil) {
+		if (tug_gettype(newtype) != TUG_STR) {
+			tug_err(T, "metamethod '__type' must be 'str', got '%s'", tuglib_gettypename(newtype));
+			return;
+		}
+	}
 	else tug_ret(T, tug_str(tuglib_typename(tug_gettype(obj))));
 }
 
 static void __tuglib_len(tug_Task* T) {
 	tug_Object* obj = tuglib_checkany(T, 0);
 	tug_Object* func = tuglib_getmetafield(obj, "__len");
-	if (func != tug_nil) tug_call(T, func, obj);
-	else switch (tug_gettype(obj)) {
+	if (func != tug_nil) {
+		tug_Object* res = tug_call(T, func, obj);
+		if (tuglib_iserr(T)) return;
+		tug_Type res_type = tug_gettype(res);
+		if (res_type != TUG_NUM) {
+			tug_err(T, "metamethod '__len' must return 'num', got '%s'", tuglib_gettypename(res));
+			return;
+		}
+		tug_ret(T, res);
+	} else switch (tug_gettype(obj)) {
 		case TUG_STR:
 		case TUG_TABLE: {
 			tug_ret(T, tug_num((double)tug_getlen(obj)));
@@ -252,6 +277,61 @@ static void __tuglib_pcall(tug_Task* T) {
 	}
 }
 
+static void __tuglib_tonum(tug_Task* T) {
+	tug_Object* obj = tuglib_checkany(T, 0);
+	tug_Type type = tug_gettype(obj);
+	if (type == TUG_NUM) {
+		tug_ret(T, obj);
+		return;
+	} else if (type == TUG_STR) {
+		const char* str = tug_getstr(obj);
+		char* endptr;
+		double val = strtod(str, &endptr);
+		if (endptr != str && *endptr == '\0') {
+			tug_ret(T, tug_num(val));
+			return;
+		}
+	}
+
+	tug_ret(T, tug_nil);
+}
+
+static void __tuglib_assert(tug_Task* T) {
+	tug_Object* obj = tuglib_checkany(T, 0);
+
+	int is_true = 0;
+	tug_Type type = tug_gettype(obj);
+	switch (type) {
+		case TUG_STR: is_true = strlen(tug_getstr(obj)) > 0; break;
+		case TUG_NUM: is_true = tug_getnum(obj) != 0.0; break;
+		case TUG_FUNC:
+		case TUG_TRUE: is_true = 1; break;
+		case TUG_TABLE: {
+			tug_Object* truth_obj = tuglib_getmetafield(obj, "__truth");
+			if (truth_obj != tug_nil) {
+				tug_Object* ret = tug_call(T, truth_obj, obj);
+				if (tuglib_iserr(T)) return;
+				tug_Type ret_type = tug_gettype(ret);
+				if (ret_type == TUG_TRUE) is_true = 1;
+				else if (ret_type == TUG_FALSE || ret_type == TUG_NIL) is_true = 0;
+				else {
+					tug_err(T, "metamethod '__truth' must return 'bool', got '%s'", tuglib_gettypename(ret));
+					return;
+				}
+			} else is_true = 1;
+		} break;
+	}
+
+	if (!is_true) {
+		tug_Object* errobj = tug_nil;
+		if (tuglib_isany(T, 1)) {
+			errobj = tuglib_checkany(T, 1);
+		}
+		tug_Object* str_obj = tuglib_tostr(errobj);
+		tug_err(T, "%s", tug_getstr(str_obj));
+	}
+}
+
 static void tuglib_loadbuiltins(tug_Task* T) {
 	tug_setglobal(T, "print", tug_cfunc("print", __tuglib_print));
 	tug_setglobal(T, "tostr", tug_cfunc("tostr", __tuglib_tostr));
@@ -261,6 +341,8 @@ static void tuglib_loadbuiltins(tug_Task* T) {
 	tug_setglobal(T, "len", tug_cfunc("len", __tuglib_len));
 	tug_setglobal(T, "error", tug_cfunc("error", __tuglib_error));
 	tug_setglobal(T, "pcall", tug_cfunc("pcall", __tuglib_pcall));
+	tug_setglobal(T, "tonum", tug_cfunc("tonum", __tuglib_tonum));
+	tug_setglobal(T, "assert", tug_cfunc("assert", __tuglib_assert));
 }
 
 static void tuglib_loadlibs(tug_Task* T) {
