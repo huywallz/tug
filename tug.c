@@ -319,6 +319,15 @@ typedef struct {
 static Vector* vec_pool[VECTOR_POOL];
 static size_t vec_poolc = 0;
 
+static void vec_clearpool(void) {
+	for (size_t i = 0; i < vec_poolc; i++) {
+		Vector* vec = vec_pool[i];
+		gc_free(vec->array);
+		gc_free(vec);
+	}
+	vec_poolc = 0;
+}
+
 static Vector* vec_serve(size_t size) {
 	if (vec_poolc > 0) {
 		Vector* res = vec_pool[--vec_poolc];
@@ -4265,5 +4274,6 @@ void tug_init(void) {
 }
 
 void tug_close(void) {
+	vec_clearpool();
 	gc_close();
 }
