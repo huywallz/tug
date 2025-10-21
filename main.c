@@ -28,6 +28,7 @@ int main() {
     free(code);
     if (!task) {
         printf("%s\n", errmsg);
+        tug_close();
         return 1;
     }
     tuglib_loadlibs(task);

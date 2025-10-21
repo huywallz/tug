@@ -1,7 +1,1 @@
-mt := {}
-mt.__gt = func(a, b)
-    return 123
-end
-
-t := setmetatable({}, mt)
-t > 4
+print("hello\p")

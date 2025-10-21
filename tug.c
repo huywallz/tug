@@ -22,6 +22,25 @@
 #define TUG_DEBUG 1
 #define TUG_CALL_LIMIT (size_t)(1000)
 
+#if TUG_DEBUG
+
+#include <execinfo.h>
+
+void print_trace(void) {
+    void *buffer[4096];
+    int nptrs = backtrace(buffer, 4096);
+    char **symbols = backtrace_symbols(buffer, nptrs);
+
+    printf("Stack trace:\n");
+    for (int i = 0; i < nptrs; i++) {
+        printf("  %s\n", symbols[i]);
+    }
+
+    free(symbols);
+}
+
+#endif
+
 static void* gc_malloc(size_t size);
 static void* gc_realloc(void* ptr, size_t new_size);
 static void gc_free(void* ptr);
@@ -178,24 +197,34 @@ static int ltok(void) {
 	}
 
 	if (ch == '"' || ch == '\'') {
+		tkind = STR;
 		char del = ch;
 		ladv();
-		size_t start = idx;
-
-		while (ch != del && ch != '\0' && ch != '\n') ladv();
-
-		if (ch != del) {
-			return perr("unfinished string");
+		
+		tstr = gc_malloc(1);
+		size_t len = 0;
+		
+		while (ch != del && ch != '\0' && ch != '\n') {
+			char c;
+			if (ch == '\\') {
+				ladv();
+				switch (ch) {
+					case '\\': c = '\\'; break;
+					case '\'': c = '\''; break;
+					case '"': c = '\"'; break;
+					case 'n': c = '\n'; break;
+					case 't': c = '\t'; break;
+					default: return perr("invalid escape character '\\%c'", ch);
+				}
+			} else c = ch;
+			tstr = gc_realloc(tstr, len + 2);
+			tstr[len++] = c;
+			ladv();
 		}
-
-		size_t len = idx - start;
-		tstr = gc_malloc(len + 1);
-		memcpy(tstr, &text[start], len);
 		tstr[len] = '\0';
-		tkind = STR;
 
+		if (ch != del) return perr("unfinished string");
 		ladv();
-
 		return 0;
 	}
 
@@ -1053,7 +1082,10 @@ static int pcall(void) {
 	while (tkind == LPAREN || tkind == LBRACK || tkind == DOT) {
 		size_t ln = tln;
 		int kind = tkind;
-		if (ltok()) return 1;
+		if (ltok()) {
+			node_free(left);
+			return 1;
+		}
 
 		if (kind == LPAREN) {
 			Vector* values = NULL;
