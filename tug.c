@@ -2361,7 +2361,11 @@ static Object* obj_create(int kind) {
 
 static Object* obj_iter(Object* obj) {
 	int kind = -1;
-	if (obj->kind == TABLE) kind = ITER_TABLE;
+	if (obj->kind == TABLE) {
+		Object* meta = tuglib_getmetafield(obj, "__next");
+		if (meta != obj_nil) return obj;
+		kind = ITER_TABLE;
+	}
 	else if (obj->kind == STR) kind = ITER_STR;
 	else return NULL;
 
@@ -3170,6 +3174,7 @@ void call_obj(Task* task, Object* obj, Vector* args, int f, int protected) {
 		func_env->next = func_map;
 		vec_push(task->varmaps, func_env);
 		for (size_t i = 0; i < vec_count(args); i++) {
+			printf("%p\n", obj->func.params);
 			set_var(task, vec_get(obj->func.params, i), vec_get(args, i));
 		}
 	} else {
@@ -3771,9 +3776,8 @@ static void task_exec(Task* task) {
 						iter_obj->iter.entry = iter_obj->iter.entry->next;
 						used = 2;
 					}
-				} else if (iter_obj->kind == TABLE && iter_obj->metatable != obj_nil) {
-					Table* mtable = iter_obj->metatable->table;
-					Object* func = table_get(mtable, new_str(gc_strdup("__next")));
+				} else {
+					Object* func = tuglib_getmetafield(iter_obj, "__next");
 
 					if (func != obj_nil) {
 						Vector* args = vec_serve(1);
@@ -3782,17 +3786,22 @@ static void task_exec(Task* task) {
 						call_fobj(func, args);
 						
 						Object* ret = pop_tvalue(task);
+						Object* dobj;
 						if (ret->kind == TUPLE) {
-							done = !obj_check(vec_get(ret->tuple, 0));
+							dobj = vec_get(ret->tuple, 0);
 							if (!done) for (size_t i = 0; i < vec_count(names); i++) {
 								size_t j = i + 1;
 								if (j >= vec_count(ret->tuple)) break;
 								set_var(task, (const char*)vec_get(names, i), vec_get(ret->tuple, j));
 								used++;
 							}
-						} else done = !obj_check(ret);
-					}
-				} else assign_err(task, "iteration fatal error");
+						} else dobj = ret;
+
+						if (dobj == obj_nil || dobj == obj_false) {
+							done = 1;
+						} else if (dobj != obj_true) assign_err(task, "metamethod '__next' must return 'bool' or 'nil', got '%s'", obj_type(dobj));
+					} else assign_err(task, "iteration fatal error");
+				}
 
 				if (done) {
 					set_addr(task, pos);

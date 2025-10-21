@@ -69,22 +69,16 @@ static tug_Object* tuglib_checktype(tug_Task* T, size_t idx, tug_Type expected) 
 
 static const char* tuglib_checkstr(tug_Task* T, size_t idx) {
 	tug_Object* obj = tuglib_checktype(T, idx, TUG_STR);
-	if (tuglib_iserr(T)) return NULL;
-
 	return tug_getstr(obj);
 }
 
 static double tuglib_checknum(tug_Task* T, size_t idx) {
 	tug_Object* obj = tuglib_checktype(T, idx, TUG_NUM);
-	if (tuglib_iserr(T)) return 0;
-
 	return tug_getnum(obj);
 }
 
 static int tuglib_checkint(tug_Task* T, size_t idx) {
 	double num = tuglib_checknum(T, idx);
-	if (tuglib_iserr(T)) return 0;
-
 	if (num < (double)INT_MIN || num > (double)INT_MAX || floor(num) != num) {
 		tug_err(T, "argument #%zu expected '<int>', got '<double>'", idx + 1);
 	}
@@ -94,8 +88,6 @@ static int tuglib_checkint(tug_Task* T, size_t idx) {
 
 static long tuglib_checklong(tug_Task* T, size_t idx) {
 	double num = tuglib_checknum(T, idx);
-	if (tuglib_iserr(T)) return 0;
-
 	if (fabs(num) > 9007199254740992.0 || floor(num) != num) {
 		tug_err(T, "argument #%zu expected '<long>', got '<double>'", idx + 1);
 	}
@@ -161,7 +153,8 @@ static tug_Object* tuglib_tostr(tug_Object* obj) {
 		case TUG_TRUE: return tug_str("true");
 		case TUG_FALSE: return tug_str("false");
 		case TUG_NIL: return tug_str("nil");
-		case TUG_FUNC: {
+		case TUG_FUNC:
+		case TUG_TABLE: {
 			char* res = malloc(50);
 			snprintf(res, 50, "%s: 0x%lx", obj_type == TUG_FUNC ? "func" : "table", tug_getid(obj));
 			tug_Object* str_obj = tug_str(res);
@@ -189,7 +182,6 @@ static void __tuglib_tostr(tug_Task* T) {
 	tug_Object* tostr = tuglib_getmetafield(obj, "__tostr");
 	if (tostr != tug_nil) {
 		tug_Object* res = tug_call(T, tostr, obj);
-		if (tuglib_iserr(T)) return;
 		tug_Type res_type = tug_gettype(res);
 		if (res_type != TUG_STR) {
 			tug_err(T, "metamethod '__tostr' must return 'str', got '%s'", tuglib_gettypename(res));
@@ -221,7 +213,6 @@ static void __tuglib_len(tug_Task* T) {
 	tug_Object* func = tuglib_getmetafield(obj, "__len");
 	if (func != tug_nil) {
 		tug_Object* res = tug_call(T, func, obj);
-		if (tuglib_iserr(T)) return;
 		tug_Type res_type = tug_gettype(res);
 		if (res_type != TUG_NUM) {
 			tug_err(T, "metamethod '__len' must return 'num', got '%s'", tuglib_gettypename(res));
@@ -310,7 +301,6 @@ static void __tuglib_assert(tug_Task* T) {
 			tug_Object* truth_obj = tuglib_getmetafield(obj, "__truth");
 			if (truth_obj != tug_nil) {
 				tug_Object* ret = tug_call(T, truth_obj, obj);
-				if (tuglib_iserr(T)) return;
 				tug_Type ret_type = tug_gettype(ret);
 				if (ret_type == TUG_TRUE) is_true = 1;
 				else if (ret_type == TUG_FALSE || ret_type == TUG_NIL) is_true = 0;
@@ -348,6 +338,101 @@ static void __tuglib_rawset(tug_Task* T) {
 	tug_setindex(table, key, value);
 }
 
+static void __tuglib_sin(tug_Task* T) {
+	double x = tuglib_checknum(T, 0);
+	tug_ret(T, tug_num(sin(x)));
+}
+
+static void __tuglib_cos(tug_Task* T) {
+	double x = tuglib_checknum(T, 0);
+	tug_ret(T, tug_num(cos(x)));
+}
+
+static void __tuglib_tan(tug_Task* T) {
+	double x = tuglib_checknum(T, 0);
+	tug_ret(T, tug_num(tan(x)));
+}
+
+static void __tuglib_atan2(tug_Task* T) {
+	double y = tuglib_checknum(T, 0);
+	double x = tuglib_checknum(T, 1);
+	tug_ret(T, tug_num(atan2(y, x)));
+}
+
+static void __tuglib_asin(tug_Task* T) {
+	double x = tuglib_checknum(T, 0);
+	tug_ret(T, tug_num(asin(x)));
+}
+
+static void __tuglib_acos(tug_Task* T) {
+	double x = tuglib_checknum(T, 0);
+	tug_ret(T, tug_num(acos(x)));
+}
+
+static void __tuglib_sqrt(tug_Task* T) {
+	double x = tuglib_checknum(T, 0);
+	tug_ret(T, tug_num(sqrt(x)));
+}
+
+static void __tuglib_pow(tug_Task* T) {
+	double x = tuglib_checknum(T, 0);
+	double y = tuglib_checknum(T, 1);
+	tug_ret(T, tug_num(pow(x, y)));
+}
+
+static void __tuglib_hypot(tug_Task* T) {
+	double x = tuglib_checknum(T, 0);
+	double y = tuglib_checknum(T, 1);
+	tug_ret(T, tug_num(hypot(x, y)));
+}
+
+static void __tuglib_floor(tug_Task* T) {
+	double x = tuglib_checknum(T, 0);
+	tug_ret(T, tug_num(floor(x)));
+}
+
+static void __tuglib_ceil(tug_Task* T) {
+	double x = tuglib_checknum(T, 0);
+	tug_ret(T, tug_num(ceil(x)));
+}
+
+static void __tuglib_round(tug_Task* T) {
+	double x = tuglib_checknum(T, 0);
+	tug_ret(T, tug_num(round(x)));
+}
+
+static void __tuglib_mod(tug_Task* T) {
+	double x = tuglib_checknum(T, 0);
+	double y = tuglib_checknum(T, 1);
+	tug_ret(T, tug_num(fmod(x, y)));
+}
+
+static void __tuglib_abs(tug_Task* T) {
+	double x = tuglib_checknum(T, 0);
+	tug_ret(T, tug_num(abs(x)));
+}
+
+static void __tuglib_srand(tug_Task* T) {
+	int seed = tuglib_checkint(T, 0);
+	srand(seed);
+}
+
+static void __tuglib_rand(tug_Task* T) {
+	size_t argc = tug_getargc(T);
+	if (argc == 0) {
+		tug_ret(T, tug_num((double)rand() / (double)RAND_MAX));
+	} else if (argc == 1) {
+		int m = tuglib_checkint(T, 0);
+
+		tug_ret(T, tug_num(rand() % m));
+	} else {
+		int m = tuglib_checkint(T, 0);
+		int n = tuglib_checkint(T, 1);
+
+		tug_ret(T, tug_num(m + rand() % (n - m + 1)));
+	}
+}
+
 static void tuglib_loadbuiltins(tug_Task* T) {
 	tug_setglobal(T, "print", tug_cfunc("print", __tuglib_print));
 	tug_setglobal(T, "tostr", tug_cfunc("tostr", __tuglib_tostr));
@@ -361,6 +446,25 @@ static void tuglib_loadbuiltins(tug_Task* T) {
 	tug_setglobal(T, "assert", tug_cfunc("assert", __tuglib_assert));
 	tug_setglobal(T, "rawget", tug_cfunc("rawget", __tuglib_rawget));
 	tug_setglobal(T, "rawset", tug_cfunc("rawset", __tuglib_rawset));
+
+	tug_Object* mathlib = tug_table();
+	tug_setindex(mathlib, tug_str("sin"), tug_cfunc("sin", __tuglib_sin));
+	tug_setindex(mathlib, tug_str("cos"), tug_cfunc("cos", __tuglib_cos));
+	tug_setindex(mathlib, tug_str("tan"), tug_cfunc("tan", __tuglib_tan));
+	tug_setindex(mathlib, tug_str("atan2"), tug_cfunc("atan2", __tuglib_atan2));
+	tug_setindex(mathlib, tug_str("asin"), tug_cfunc("asin", __tuglib_asin));
+	tug_setindex(mathlib, tug_str("acos"), tug_cfunc("acos", __tuglib_acos));
+	tug_setindex(mathlib, tug_str("sqrt"), tug_cfunc("sqrt", __tuglib_sqrt));
+	tug_setindex(mathlib, tug_str("pow"), tug_cfunc("pow", __tuglib_pow));
+	tug_setindex(mathlib, tug_str("hypot"), tug_cfunc("hypot", __tuglib_hypot));
+	tug_setindex(mathlib, tug_str("floor"), tug_cfunc("floor", __tuglib_floor));
+	tug_setindex(mathlib, tug_str("ceil"), tug_cfunc("ceil", __tuglib_ceil));
+	tug_setindex(mathlib, tug_str("round"), tug_cfunc("round", __tuglib_round));
+	tug_setindex(mathlib, tug_str("mod"), tug_cfunc("mod", __tuglib_mod));
+	tug_setindex(mathlib, tug_str("abs"), tug_cfunc("abs", __tuglib_abs));
+	tug_setindex(mathlib, tug_str("srand"), tug_cfunc("srand", __tuglib_srand));
+	tug_setindex(mathlib, tug_str("rand"), tug_cfunc("rand", __tuglib_rand));
+	tug_setglobal(T, "math", mathlib);
 }
 
 static void tuglib_loadlibs(tug_Task* T) {

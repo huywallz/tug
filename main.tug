@@ -1,1 +1,31 @@
-print("hello\p")
+func range(start, stop, step)
+    if stop == nil then
+        stop = start
+        start = 0
+    end
+
+    if step == nil then
+        step = 1
+    end
+
+    current := start
+
+    t := setmetatable({}, {
+        __iter = func() return t end,
+        __next = func()
+            if (step > 0 and current >= stop) or (step < 0 and current <= stop) then
+                return false
+            end
+
+            value := current
+            current = current + 1
+            return true, value
+        end
+    })
+
+    return t
+end
+
+for i in range(10) do
+    print(i)
+end
