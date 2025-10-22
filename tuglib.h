@@ -310,6 +310,7 @@ static void __tuglib_assert(tug_Task* T) {
 				}
 			} else is_true = 1;
 		} break;
+		default: is_true = 0;
 	}
 
 	if (!is_true) {
@@ -409,7 +410,7 @@ static void __tuglib_mod(tug_Task* T) {
 
 static void __tuglib_abs(tug_Task* T) {
 	double x = tuglib_checknum(T, 0);
-	tug_ret(T, tug_num(abs(x)));
+	tug_ret(T, tug_num(fabs(x)));
 }
 
 static void __tuglib_srand(tug_Task* T) {

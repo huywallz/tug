@@ -26,6 +26,6 @@ func range(start, stop, step)
     return t
 end
 
-for i in range(10) do
+for i in range(1000000) do
     print(i)
 end

@@ -1,0 +1,6 @@
+gcc -c tug.c -o tug.o -g
+ar rcs libtug.a tug.o
+gcc main.c -o main -L. -ltug -lm -g -fsanitize=address
+mv -f main $HOME
+chmod +x $HOME/main
+$HOME/main

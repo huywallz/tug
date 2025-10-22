@@ -22,7 +22,7 @@
 #define TUG_DEBUG 1
 #define TUG_CALL_LIMIT (size_t)(1000)
 
-#if TUG_DEBUG
+#if TUG_DEBUG && !defined(__ANDROID__)
 
 #include <execinfo.h>
 
@@ -341,6 +341,7 @@ typedef struct {
 	void** array;
 	size_t capacity;
 	size_t count;
+	uint8_t pooled;
 } Vector;
 
 #define VECTOR_POOL 256
@@ -358,21 +359,25 @@ static void vec_clearpool(void) {
 }
 
 static Vector* vec_serve(size_t size) {
+	if (size < 8) size = 8;
 	if (vec_poolc > 0) {
 		Vector* res = vec_pool[--vec_poolc];
+		res->count = 0;
+		
 		if (res->capacity < size) {
 			res->capacity = size;
 			res->array = gc_realloc(res->array, res->capacity * sizeof(void*));
 		}
+		res->pooled = 0;
 
 		return res;
 	}
-	if (size < 8) size = 8;
 
 	Vector* vec = gc_malloc(sizeof(Vector));
 	vec->capacity = size;
 	vec->count = 0;
 	vec->array = gc_malloc(vec->capacity * sizeof(void*));
+	vec->pooled = 0;
 
 	return vec;
 }
@@ -430,10 +435,10 @@ static void* vec_popfirst(Vector* vec) {
 
 // required manual free inside vector before call `vec_free`
 static void vec_free(Vector* vec) {
-	if (!vec) return;
+	if (!vec || !vec->pooled) return;
 	if (vec_poolc < VECTOR_POOL) {
 		vec_pool[vec_poolc++] = vec;
-		vec->count = 0;
+		vec->pooled = 1;
 	} else {
 		gc_free(vec->array);
 		gc_free(vec);
@@ -2319,7 +2324,8 @@ typedef struct tug_Object {
 			struct TableEntry* entry;
 		} iter;
 	};
-	int marked;
+	uint8_t collected;
+	uint8_t marked;
 	uint64_t id;
 } Object;
 
@@ -2339,6 +2345,7 @@ static Object* obj_create(int kind) {
 	obj->kind = kind;
 	obj->str = NULL;
 	obj->marked = 0;
+	obj->collected = 0;
 
 	#ifdef __ANDROID__
 
@@ -2676,8 +2683,8 @@ static void table_set(Table* table, Object* key, Object* value) {
 
 static void table_free(struct Table* table) {
 	if (!table || !table->buckets) {
-	gc_free(table);
-	return;
+		gc_free(table);
+		return;
     }
 
     for (size_t i = 0; i < table->capacity; i++) {
@@ -3173,9 +3180,11 @@ void call_obj(Task* task, Object* obj, Vector* args, int f, int protected) {
 		gc_collect_closure(func_env);
 		func_env->next = func_map;
 		vec_push(task->varmaps, func_env);
-		for (size_t i = 0; i < vec_count(args); i++) {
-			printf("%p\n", obj->func.params);
-			set_var(task, vec_get(obj->func.params, i), vec_get(args, i));
+		size_t argc = vec_count(args);
+		size_t paramc = vec_count(obj->func.params);
+		for (size_t i = 0; i < paramc; i++) {
+			if (i >= argc) set_var(task, vec_get(obj->func.params, i), obj_nil);
+			else set_var(task, vec_get(obj->func.params, i), vec_get(args, i));
 		}
 	} else {
 		if (setjmp(cfunc_jmp_buf) == 0) {
@@ -3970,6 +3979,8 @@ static char* gc_strdup(const char* str) {
 }
 
 static inline void gc_collect_obj(Object* obj) {
+	if (obj->collected) return;
+	obj->collected = 1;
 	vec_push(objects, obj);
 }
 
@@ -3981,8 +3992,10 @@ static inline void gc_collect_task(Task* task) {
 	vec_push(tasks, task);
 }
 
+static void gc_mark_closure(VarMap* varmap);
 static void gc_mark_obj(Object* obj) {
 	if (!obj || obj == obj_true || obj == obj_false || obj == obj_nil) return;
+	if (obj->marked) return;
 	obj->marked = 1;
 	if (obj->kind == TUPLE) {
 		for (size_t i = 0; i < vec_count(obj->tuple); i++) {
@@ -4002,6 +4015,13 @@ static void gc_mark_obj(Object* obj) {
 		
 		gc_mark_obj(obj->metatable);
 	} else if (obj->kind == ITER_STR || obj->kind == ITER_TABLE) gc_mark_obj(obj->iter.obj);
+	else if (obj->kind == FUNC) {
+		VarMap* map = obj->func.upper;
+		while (map) {
+			gc_mark_closure(map);
+			map = map->next;
+		}
+	}
 }
 
 static void gc_mark_closure(VarMap* varmap) {
@@ -4014,8 +4034,6 @@ static void gc_mark_closure(VarMap* varmap) {
 			entry = entry->next;
 		}
 	}
-
-	gc_mark_closure(varmap->next);
 }
 
 static void gc_mark_task(Task* task) {
@@ -4024,7 +4042,11 @@ static void gc_mark_task(Task* task) {
 	vec_iter(task->stack, gc_mark_obj);
 
 	for (size_t i = 0; i < vec_count(task->varmaps); i++) {
-		gc_mark_closure(vec_get(task->varmaps, i));
+		VarMap* map = vec_get(task->varmaps, i);
+		while (map) {
+			gc_mark_closure(map);
+			map = map->next;
+		}
 	}
 	
 	gc_mark_closure(task->global);

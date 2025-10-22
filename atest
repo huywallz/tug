@@ -1,0 +1,4 @@
+gcc test.c -o test -g
+mv -f test $HOME
+chmod +x $HOME/test
+$HOME/test
