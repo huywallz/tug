@@ -411,7 +411,7 @@ static void* vec_pop(Vector* vec) {
 	void* res = vec->array[--vec->count];
 
 	if (vec->count < vec->capacity / 4 && vec->capacity > 8) {
-		vec->capacity /= 4;
+		vec->capacity /= 2;
 		vec->array = gc_realloc(vec->array, vec->capacity * sizeof(void*));
 	}
 	return res;
@@ -435,7 +435,7 @@ static void* vec_popfirst(Vector* vec) {
 
 // required manual free inside vector before call `vec_free`
 static void vec_free(Vector* vec) {
-	if (!vec || !vec->pooled) return;
+	if (!vec || vec->pooled) return;
 	if (vec_poolc < VECTOR_POOL) {
 		vec_pool[vec_poolc++] = vec;
 		vec->pooled = 1;
