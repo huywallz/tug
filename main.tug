@@ -1,31 +1,15 @@
-func range(start, stop, step)
-    if stop == nil then
-        stop = start
-        start = 0
-    end
+module := {
+    a = {
+        b = {}
+    }
+}
 
-    if step == nil then
-        step = 1
-    end
-
-    current := start
-
-    t := setmetatable({}, {
-        __iter = func() return t end,
-        __next = func()
-            if (step > 0 and current >= stop) or (step < 0 and current <= stop) then
-                return false
-            end
-
-            value := current
-            current = current + 1
-            return true, value
-        end
-    })
-
-    return t
+i := 0
+func module.a.b.c()
+    i = i + 1
+    print(i)
 end
 
-for i in range(1000000) do
-    print(i)
+while i < 100 do
+    module.a.b.c()
 end

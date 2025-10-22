@@ -639,16 +639,18 @@ static Node* node_while(Node* cond, NodeBlock* block) {
 }
 
 typedef struct {
-	char* name;
+	Vector* names;
 	Vector* params;
 	NodeBlock* block;
+	size_t ln;
 } Node_FuncDef;
 
-static Node* node_funcdef(char* name, Vector* params, NodeBlock* block) {
+static Node* node_funcdef(Vector* names, Vector* params, NodeBlock* block, size_t ln) {
 	Node_FuncDef* funcdef = gc_malloc(sizeof(Node_FuncDef));
-	funcdef->name = name;
+	funcdef->names = names;
 	funcdef->params = params;
 	funcdef->block = block;
+	funcdef->ln = ln;
 
 	return node_create(FUNCDEF, funcdef);
 }
@@ -857,7 +859,7 @@ static void node_free(Node* node) {
 		case FUNCDEF: {
 			Node_FuncDef* funcdef = (Node_FuncDef*)node->data;
 
-			gc_free(funcdef->name);
+			vec_stdfree(funcdef->names);
 			vec_stdfree(funcdef->params);
 
 			node_block_free(funcdef->block);
@@ -1033,6 +1035,7 @@ static int pval(void) {
 			return 1;
 		}
 	} else if (tkind == FUNC) {
+		size_t ln = tln;
 		Vector* params = NULL;
 		if (ltok()) return 1;
 		else if (tkind != LPAREN) return perr("expected '('");
@@ -1072,7 +1075,7 @@ static int pval(void) {
 			return 1;
 		}
 		
-		node = node_funcdef(NULL, params, block);
+		node = node_funcdef(NULL, params, block, ln);
 		return ltok();
 	}
 
@@ -1375,12 +1378,24 @@ static int pstmt(void) {
 	}
 
 	if (tkind == FUNC) {
+		size_t ln = tln;
 		if (ltok()) return 1;
 		else if (tkind != NAME) return perr("expected '<name>'");
 
-		char* name = gc_strdup(tstr);
+		Vector* names = vec_create();
+		vec_push(names, gc_strdup(tstr));
 		if (ltok()) goto __freename;
-		else if (tkind != LPAREN) {
+		while (tkind == DOT) {
+			if (ltok()) goto __freename;
+			if (tkind != NAME) {
+				perr("expected '<name>'");
+				goto __freename;
+			}
+			vec_push(names, gc_strdup(tstr));
+			if (ltok()) goto __freename;
+		}
+
+		if (tkind != LPAREN) {
 			perr("expected '('");
 			goto __freename;
 		} else if (ltok()) goto __freename;
@@ -1389,7 +1404,7 @@ static int pstmt(void) {
 		goto __donename;
 
 		__freename: {
-			gc_free(name);
+			vec_stdfree(names);
 			return 1;
 		}
 
@@ -1414,7 +1429,7 @@ static int pstmt(void) {
 		goto __nofreeparams;
 
 		__freeparams: {
-			gc_free(name);
+			vec_stdfree(names);
 			vec_stdfree(params);
 
 			return 1;
@@ -1430,7 +1445,7 @@ static int pstmt(void) {
 		NodeBlock* block = pblock(0);
 		if (!block) goto __freeparams;
 
-		node = node_funcdef(name, params, block);
+		node = node_funcdef(names, params, block, ln);
 		return ltok();
 	}
 
@@ -2109,7 +2124,15 @@ static void compile_node(Node* node) {
 			Node_FuncDef* funcdef = (Node_FuncDef*)node->data;
 
 			emit_byte(OP_FUNCDEF);
-			emit_str(funcdef->name == NULL ? "<anonymous>" : funcdef->name);
+			emit_addr(funcdef->ln);
+			if (funcdef->names == NULL) {
+				emit_addr(0);
+			} else {
+				emit_addr(vec_count(funcdef->names));
+				for (size_t i = 0; i < vec_count(funcdef->names); i++) {
+					emit_str((const char*)vec_get(funcdef->names, i));
+				}
+			}
 
 			Vector* params = funcdef->params;
 			emit_addr(vec_count(params));
@@ -2126,11 +2149,11 @@ static void compile_node(Node* node) {
 			emit_bc(temp);
 			bc_free(temp);
 
-			if (funcdef->name != NULL) {
+			if (funcdef->names != NULL && vec_count(funcdef->names) == 1) {
 				emit_byte(OP_STORE);
 				emit_byte(1);
 				emit_addr(1);
-				emit_str(funcdef->name);
+				emit_str(vec_get(funcdef->names, 0));
 			}
 		} break;
 
@@ -3021,7 +3044,7 @@ static inline VarMap* get_map(Task* task);
 // Expecting `params` must be an array of `const char*`
 // `params` will be duplicated
 // `src` will be duplicated
-// `name` will be duplicated
+// `name` will not be duplicated
 // `bc` will be increased (reference count)
 static Object* new_func(Task* task, char* name, Vector* params, Bytecode* bc) {
 	bc->ref++;
@@ -3030,11 +3053,9 @@ static Object* new_func(Task* task, char* name, Vector* params, Bytecode* bc) {
 	for (size_t i = 0; i < count; i++) {
 		vec_push(dparams, gc_strdup((char*)vec_get(params, i)));
 	}
-
-	char* nname = strlen(name) == 0 ? NULL : gc_strdup(name);
 	char* nsrc = gc_strdup(task->frame->src);
 
-	Object* obj = obj_func(nsrc, nname, dparams, bc, get_map(task));
+	Object* obj = obj_func(nsrc, name, dparams, bc, get_map(task));
 	gc_collect_obj(obj);
 
 	return obj;
@@ -3521,7 +3542,59 @@ static void task_exec(Task* task) {
 			} break;
 
 			case OP_FUNCDEF: {
-				const char* name = read_str(task);
+				size_t ln = read_addr(task);
+				task->frame->ln = ln;
+
+				size_t namec = read_addr(task);
+				char* name = NULL;
+				Object* obj = NULL;
+				char* lastname = NULL;
+				if (namec == 0) name = "<anonymous>";
+				else {
+					name = gc_malloc(256);
+					size_t cap = 256;
+					size_t len = 0;
+					for (size_t i = 0; i < namec; i++) {
+						const char* part = read_str(task);
+						while (len + strlen(part) + 2 > cap) {
+							cap *= 2;
+							name = gc_realloc(name, cap);
+						}
+						if (i == namec - 1) lastname = gc_strdup(part);
+						if (i == 0) {
+							obj = get_var(task, part);
+
+							strcpy(name, part);
+							len += strlen(part);
+						} else {
+							if (i != namec - 1) {
+								Object* mmethod = tuglib_getmetafield(obj, "__get");
+								if (mmethod != obj_nil) {
+									Vector* args = vec_serve(2);
+									vec_push(args, obj);
+									vec_push(args, new_str(gc_strdup(part)));
+
+									call_fobj(mmethod, args);
+									Object* ret = pop_tvalue(task);
+									if (ret->kind == TUPLE) {
+										ret = vec_get(ret->tuple, 0);
+									}
+									obj = ret;
+								} else if (obj->kind == TABLE) {
+									obj = table_get(obj->table, new_str(gc_strdup(part)));
+								} else {
+									assign_err(task, "unable to get index '%s'", obj_type(obj));
+									gc_free(name);
+									break;
+								}
+							}
+
+							strcat(name, ".");
+							strcat(name, part);
+							len += strlen(part) + 1;
+						}
+					}
+				}
 
 				size_t count = read_addr(task);
 				Vector* params = vec_create();
@@ -3530,7 +3603,23 @@ static void task_exec(Task* task) {
 				}
 
 				Bytecode* bc = read_bc(task);
-				push_func(task, (char*)name, params, bc);
+				Object* fobj = new_func(task, name, params, bc);
+				if (obj) {
+					Object* mmethod = tuglib_getmetafield(obj, "__set");
+					if (mmethod != obj_nil) {
+						Vector* args = vec_serve(3);
+						vec_push(args, obj);
+						vec_push(args, new_str(lastname));
+						vec_push(args, fobj);
+
+						call_fobj(mmethod, args);
+						pop_value(task);
+					} else if (obj->kind == TABLE) {
+						table_set(obj->table, new_str(lastname), fobj);
+					} else {
+						assign_err(task, "unable to set index '%s'", obj_type(obj));
+					}
+				} else vec_push(task->stack, fobj);
 				vec_free(params);
 			} break;
 
@@ -3618,7 +3707,7 @@ static void task_exec(Task* task) {
 
 					if (obj->metatable != obj_nil) {
 						Table* mtable = obj->metatable->table;
-						Object* func = table_get(mtable, new_str(gc_strdup("__set")));
+						Object* func = table_get(mtable, new_str(gc_strdup("__get")));
 
 						if (func != obj_nil) {
 							Vector* args = vec_serve(3);
