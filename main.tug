@@ -1,15 +1,4 @@
-module := {
-    a = {
-        b = {}
-    }
-}
-
 i := 0
-func module.a.b.c()
+while i < 1000000 do
     i = i + 1
-    print(i)
-end
-
-while i < 100 do
-    module.a.b.c()
 end

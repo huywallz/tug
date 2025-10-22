@@ -1,4 +1,4 @@
 gcc -c tug.c -o tug.o -g
 ar rcs libtug.a tug.o
-gcc main.c -o main -L. -lm -ltug -g -fsanitize=address
+gcc main.c -o main -L. -lm -ltug -g
 ./main

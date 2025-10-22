@@ -22,6 +22,11 @@
 #define TUG_DEBUG 1
 #define TUG_CALL_LIMIT (size_t)(1000)
 
+// Garbage collector
+#define TUG_TARGET_UNTIL 0.6
+#define TUG_MAX_GROWTH 2.0
+#define TUG_MIN_SHRINK 0.5
+
 #if TUG_DEBUG && !defined(__ANDROID__)
 
 #include <execinfo.h>
@@ -4071,6 +4076,7 @@ static inline void gc_collect_obj(Object* obj) {
 	if (obj->collected) return;
 	obj->collected = 1;
 	vec_push(objects, obj);
+	printf("%zu count\n", vec_count(objects));
 }
 
 static inline void gc_collect_closure(VarMap* varmap) {
@@ -4189,7 +4195,17 @@ static void gc_sweep(void) {
 		}
 	}
 
-	threshold = gc_size * 2;
+	size_t ssize = gc_size;
+	size_t old_threshold = threshold;
+
+	double desired = (double)gc_size / TUG_TARGET_UNTIL;
+
+	double min_allowed = (double)old_threshold / 2.0 * TUG_MIN_SHRINK;
+	double max_allowed = (double)old_threshold * TUG_MAX_GROWTH;
+	if (desired < min_allowed) desired = min_allowed;
+	else if (desired > max_allowed) desired = max_allowed;
+
+	threshold = (size_t)desired;
 }
 
 static inline void gc_run(void) {
