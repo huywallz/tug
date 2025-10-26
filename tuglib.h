@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <stdio.h>
+#include <time.h>
 #include "tug.h"
 
 #define tuglib_isnew(T) (tug_getstate(T) == TUG_NEW)
@@ -339,6 +340,10 @@ static void __tuglib_rawset(tug_Task* T) {
 	tug_setindex(table, key, value);
 }
 
+static void __tuglib_clock(tug_Task* T) {
+	tug_ret(T, tug_num((double)clock() / CLOCKS_PER_SEC));
+}
+
 static void __tuglib_sin(tug_Task* T) {
 	double x = tuglib_checknum(T, 0);
 	tug_ret(T, tug_num(sin(x)));
@@ -447,6 +452,7 @@ static void tuglib_loadbuiltins(tug_Task* T) {
 	tug_setglobal(T, "assert", tug_cfunc("assert", __tuglib_assert));
 	tug_setglobal(T, "rawget", tug_cfunc("rawget", __tuglib_rawget));
 	tug_setglobal(T, "rawset", tug_cfunc("rawset", __tuglib_rawset));
+	tug_setglobal(T, "clock", tug_cfunc("clock", __tuglib_clock));
 
 	tug_Object* mathlib = tug_table();
 	tug_setindex(mathlib, tug_str("sin"), tug_cfunc("sin", __tuglib_sin));

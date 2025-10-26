@@ -22,6 +22,11 @@
 #define TUG_DEBUG 1
 #define TUG_CALL_LIMIT (size_t)(1000)
 
+#define VARMAP_POOL_LIMIT 256
+#define VARMAPENTRY_POOL_LIMIT 256
+#define VECTOR_POOL_LIMIT 256
+#define OBJ_POOL_LIMIT 512
+
 // Garbage collector
 #define TUG_TARGET_UNTIL 0.6
 #define TUG_MAX_GROWTH 2.0
@@ -349,9 +354,7 @@ typedef struct {
 	uint8_t pooled;
 } Vector;
 
-#define VECTOR_POOL 256
-
-static Vector* vec_pool[VECTOR_POOL];
+static Vector* vec_pool[VECTOR_POOL_LIMIT];
 static size_t vec_poolc = 0;
 
 static void vec_clearpool(void) {
@@ -441,7 +444,7 @@ static void* vec_popfirst(Vector* vec) {
 // required manual free inside vector before call `vec_free`
 static void vec_free(Vector* vec) {
 	if (!vec || vec->pooled) return;
-	if (vec_poolc < VECTOR_POOL) {
+	if (vec_poolc < VECTOR_POOL_LIMIT) {
 		vec_pool[vec_poolc++] = vec;
 		vec->pooled = 1;
 	} else {
@@ -2368,8 +2371,16 @@ static Object __obj_nil = {NIL, NULL};
 
 static size_t next_id = 0;
 
+static Object* obj_pool[OBJ_POOL_LIMIT];
+static size_t obj_poolc = 0;
+
 static Object* obj_create(int kind) {
-	Object* obj = gc_malloc(sizeof(Object));
+	Object* obj;
+	if (obj_poolc > 0) {
+		obj = obj_pool[--obj_poolc];
+	} else {
+		obj = gc_malloc(sizeof(Object));
+	}
 	obj->kind = kind;
 	obj->str = NULL;
 	obj->marked = 0;
@@ -2485,7 +2496,10 @@ static void obj_free(Object* obj) {
 	} else if (obj->kind == TABLE) {
 		table_free(obj->table);
 	}
-	gc_free(obj);
+	
+	if (obj_poolc < OBJ_POOL_LIMIT) {
+		obj_pool[obj_poolc++] = obj;
+	} else gc_free(obj);
 }
 
 static const char* obj_type(Object* obj) {
@@ -2750,13 +2764,46 @@ static uint64_t hash_str(const char* str) {
 	return hash;
 }
 
+static VarMap* varmap_pool[VARMAP_POOL_LIMIT];
+static size_t varmap_poolc = 0;
+static VarMapEntry* varmapentry_pool[VARMAPENTRY_POOL_LIMIT];
+static size_t varmapentry_poolc = 0;
+
+static VarMapEntry* varmapentry_create(const char* key, Object* value) {
+	VarMapEntry* entry;
+	if (varmapentry_poolc > 0) {
+		entry = varmapentry_pool[--varmapentry_poolc];
+	} else entry = gc_malloc(sizeof(VarMapEntry));
+	
+	entry->key = gc_strdup(key);
+	entry->value = value;
+	return entry;
+}
+
+static void varmapentry_free(VarMapEntry* entry) {
+	gc_free(entry->key);
+	if (varmapentry_poolc < VARMAPENTRY_POOL_LIMIT) {
+		varmapentry_pool[varmapentry_poolc++] = entry;
+	} else {
+		gc_free(entry);
+	}
+}
+
 static VarMap* varmap_create() {
-	VarMap* map = gc_malloc(sizeof(VarMap));
+	VarMap* map;
+	if (varmap_poolc > 0) {
+		map = varmap_pool[--varmap_poolc];
+	} else {
+		map = gc_malloc(sizeof(VarMap));
+		map->buckets = gc_calloc(8, sizeof(VarMapEntry*));
+	}
+	
 	map->capacity = 8;
 	map->count = 0;
-	map->buckets = gc_calloc(map->capacity, sizeof(VarMapEntry*));
 	map->marked = 0;
 	map->next = NULL;
+	
+	memset(map->buckets, 0, map->capacity * sizeof(VarMapEntry*));
 
 	return map;
 }
@@ -2775,9 +2822,7 @@ static void varmap_put(VarMap* map, const char* key, Object* value) {
 		entry = entry->next;
 	}
 
-	entry = gc_malloc(sizeof(VarMapEntry));
-	entry->key = gc_strdup(key);
-	entry->value = value;
+	entry = varmapentry_create(key, value);
 	entry->next = map->buckets[index];
 	map->buckets[index] = entry;
 	map->count++;
@@ -2860,14 +2905,17 @@ static void varmap_free(VarMap* map) {
 
 		while (entry) {
 			VarMapEntry* next = entry->next;
-			gc_free(entry->key);
-			gc_free(entry);
-
+			varmapentry_free(entry);
 			entry = next;
 		}
 	}
-	gc_free(map->buckets);
-	gc_free(map);
+	
+	if (varmap_poolc < VARMAP_POOL_LIMIT) {
+		varmap_pool[varmap_poolc++] = map;
+	} else {
+		gc_free(map->buckets);
+		gc_free(map);
+	}
 }
 
 typedef struct Info {
@@ -4076,7 +4124,6 @@ static inline void gc_collect_obj(Object* obj) {
 	if (obj->collected) return;
 	obj->collected = 1;
 	vec_push(objects, obj);
-	printf("%zu count\n", vec_count(objects));
 }
 
 static inline void gc_collect_closure(VarMap* varmap) {
@@ -4541,5 +4588,16 @@ void tug_init(void) {
 
 void tug_close(void) {
 	vec_clearpool();
+	for (size_t i = 0; i < varmap_poolc; i++) {
+		VarMap* map = varmap_pool[i];
+		gc_free(map->buckets);
+		gc_free(map);
+	}
+	for (size_t i = 0; i < varmapentry_poolc; i++) {
+		gc_free(varmapentry_pool[i]);
+	}
+	for (size_t i = 0; i < obj_poolc; i++) {
+		gc_free(obj_pool[i]);
+	}
 	gc_close();
 }

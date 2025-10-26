@@ -1,4 +1,5 @@
-i := 0
-while i < 1000000 do
-    i = i + 1
+i, t := 0, clock()
+while i < 10000 do
+	i = i + 1
 end
+print(clock() - t)
