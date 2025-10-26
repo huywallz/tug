@@ -25,7 +25,7 @@
 #define VARMAP_POOL_LIMIT 256
 #define VARMAPENTRY_POOL_LIMIT 256
 #define VECTOR_POOL_LIMIT 256
-#define OBJ_POOL_LIMIT 512
+#define OBJ_POOL_LIMIT 4096
 
 // Garbage collector
 #define TUG_TARGET_UNTIL 0.6
@@ -2369,6 +2369,7 @@ static Object __obj_nil = {NIL, NULL};
 #define obj_nil (&__obj_nil)
 #define obj_truth(c) ((c) ? obj_true : obj_false)
 
+static uint64_t seed_id = 0;
 static size_t next_id = 0;
 
 static Object* obj_pool[OBJ_POOL_LIMIT];
@@ -2386,21 +2387,7 @@ static Object* obj_create(int kind) {
 	obj->marked = 0;
 	obj->collected = 0;
 
-	#ifdef __ANDROID__
-
-	struct timespec ts;
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	uint64_t t = (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
-
-	#elif defined(__linux__)
-
-	struct timeval tv;
-	gettimeofday(&tv, NULL);
-	uint64_t t = (uint64_t)tv.tv_sec * 1000000000ULL + (uint64_t)tv.tv_usec * 1000ULL;
-
-	#endif
-
-	obj->id = (next_id++ ^ (t & 0xFFFFFF));
+	obj->id = (next_id++ ^ (seed_id & 0xFFFFFF));
 
 	return obj;
 }
@@ -3998,6 +3985,20 @@ static void task_exec(Task* task) {
 }
 
 static void task_run(Task* task) {
+	#ifdef __ANDROID__
+
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	seed_id = (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+
+	#elif defined(__linux__)
+
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	seed_id = (uint64_t)tv.tv_sec * 1000000000ULL + (uint64_t)tv.tv_usec * 1000ULL;
+
+	#endif
+	
 	task->state = TASK_RUNNING;
 
 	while (task->state == TASK_RUNNING) {
@@ -4075,10 +4076,12 @@ static void gc_init() {
 	threshold = 1024 * 1024;
 }
 
+size_t mallocc = 0;
 static void* gc_malloc(size_t size) {
 	GCHeader* header = malloc(sizeof(GCHeader) + size);
 	header->size = size;
 	gc_size += size;
+	printf("%zu\n", ++mallocc);
 	return (void*)(header + 1);
 }
 
