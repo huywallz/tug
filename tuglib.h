@@ -439,6 +439,27 @@ static void __tuglib_rand(tug_Task* T) {
 	}
 }
 
+static void __tuglib_sub(tug_Task* T) {
+	const char* str = tuglib_checkstr(T, 0);
+	long start = tuglib_optlong(T, 1, 0);
+	start = start < 0 ? 0 : start;
+	size_t len = strlen(str);
+	long end = tuglib_optlong(T, 2, len);
+	end = end < 0 ? 0 : end;
+	end = (size_t)end > len ? len : end;
+	if (start > end) {
+		tug_ret(T, tug_str(""));
+		return;
+	}
+	
+	size_t flen = (size_t)(end - start);
+	char* res = malloc(flen + 1);
+	memcpy(res, str + start, flen);
+	res[flen] = '\0';
+	tug_ret(T, tug_str(res));
+	free(res);
+}
+
 static void tuglib_loadbuiltins(tug_Task* T) {
 	tug_setglobal(T, "print", tug_cfunc("print", __tuglib_print));
 	tug_setglobal(T, "tostr", tug_cfunc("tostr", __tuglib_tostr));
@@ -472,6 +493,10 @@ static void tuglib_loadbuiltins(tug_Task* T) {
 	tug_setindex(mathlib, tug_str("srand"), tug_cfunc("srand", __tuglib_srand));
 	tug_setindex(mathlib, tug_str("rand"), tug_cfunc("rand", __tuglib_rand));
 	tug_setglobal(T, "math", mathlib);
+	
+	tug_Object* strlib = tug_table();
+	tug_setindex(strlib, tug_str("sub"), tug_cfunc("sub", __tuglib_sub));
+	tug_setglobal(T, "str", strlib);
 }
 
 static void tuglib_loadlibs(tug_Task* T) {

@@ -3068,7 +3068,9 @@ static Bytecode* read_bc(Task* task) {
 
 #define set_addr(__T, __addr) ((__T)->frame->iptr = (__addr))
 
-#define push_obj(__T, __obj) vec_push((__T)->stack, (__obj))
+static void push_obj(Task* task, Object* obj) {
+	vec_push(task->stack, obj);
+}
 
 static void gc_collect_obj(Object* obj);
 static inline Object* gc_obj(Object* obj) {
@@ -3589,7 +3591,7 @@ static void task_exec(Task* task) {
 				char* name = NULL;
 				Object* obj = NULL;
 				char* lastname = NULL;
-				if (namec == 0) name = "<anonymous>";
+				if (namec == 0) name = gc_strdup("<anonymous>");
 				else {
 					name = gc_malloc(256);
 					size_t cap = 256;
@@ -3644,7 +3646,7 @@ static void task_exec(Task* task) {
 
 				Bytecode* bc = read_bc(task);
 				Object* fobj = new_func(task, name, params, bc);
-				if (obj) {
+				if (obj && namec > 1) {
 					Object* mmethod = tuglib_getmetafield(obj, "__set");
 					if (mmethod != obj_nil) {
 						Vector* args = vec_serve(3);
@@ -3760,8 +3762,18 @@ static void task_exec(Task* task) {
 					}
 
 					if (!meta) push_obj(task, table_get(table, key));
+				} else if (obj->kind == STR && key->kind == NUM) {
+					long idx = (long)key->num;
+					idx = idx < 0 ? 0 : idx;
+					size_t len = strlen(obj->str);
+					idx = idx > len ? len : idx;
+					
+					char res[2];
+					res[0] = obj->str[idx];
+					res[1] = '\0';
+					push_obj(task, tug_str(res));
 				} else {
-					assign_err(task, "unable to get index '%s'", obj_type(obj));
+					assign_err(task, "unable to get index '%s' with '%s'", obj_type(obj), obj_type(key));
 				}
 			} break;
 
@@ -3889,10 +3901,10 @@ static void task_exec(Task* task) {
 				int used = 0;
 				if (iter_obj->kind == ITER_STR) {
 					if (iter_obj->iter.idx < iter_obj->iter.len) {
-						char* str = gc_malloc(2);
+						char str[2];
 						str[0] = iter_obj->iter.obj->str[iter_obj->iter.idx++];
 						str[1] = '\0';
-						set_var(task, vec_get(names, 0), new_str(str));
+						set_var(task, vec_get(names, 0), tug_str(str));
 						used = 1;
 					} else {
 						done = 1;
@@ -3901,9 +3913,10 @@ static void task_exec(Task* task) {
 					Object* table_obj = iter_obj->iter.obj;
 					Table* table = table_obj->table;
 					if (iter_obj->iter.entry == NULL) {
-						while (iter_obj->iter.idx < table->capacity && !iter_obj->iter.entry) {
-							iter_obj->iter.entry = table->buckets[iter_obj->iter.idx++];
+						while (iter_obj->iter.idx < table->capacity && !table->buckets[iter_obj->iter.idx]) {
+							iter_obj->iter.idx++;
 						}
+						iter_obj->iter.entry = table->buckets[iter_obj->iter.idx];
 					}
 					if (iter_obj->iter.entry == NULL) done = 1;
 					else {
@@ -3927,7 +3940,7 @@ static void task_exec(Task* task) {
 						Object* dobj;
 						if (ret->kind == TUPLE) {
 							dobj = vec_get(ret->tuple, 0);
-							if (!done) for (size_t i = 0; i < vec_count(names); i++) {
+							for (size_t i = 0; i < vec_count(names); i++) {
 								size_t j = i + 1;
 								if (j >= vec_count(ret->tuple)) break;
 								set_var(task, (const char*)vec_get(names, i), vec_get(ret->tuple, j));
@@ -3951,7 +3964,7 @@ static void task_exec(Task* task) {
 					}
 				}
 				vec_free(names);
-			}
+			} break;
 		}
 
 		if (task->state == TASK_ERROR) {
@@ -3985,20 +3998,6 @@ static void task_exec(Task* task) {
 }
 
 static void task_run(Task* task) {
-	#ifdef __ANDROID__
-
-	struct timespec ts;
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	seed_id = (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
-
-	#elif defined(__linux__)
-
-	struct timeval tv;
-	gettimeofday(&tv, NULL);
-	seed_id = (uint64_t)tv.tv_sec * 1000000000ULL + (uint64_t)tv.tv_usec * 1000ULL;
-
-	#endif
-	
 	task->state = TASK_RUNNING;
 
 	while (task->state == TASK_RUNNING) {
@@ -4076,12 +4075,10 @@ static void gc_init() {
 	threshold = 1024 * 1024;
 }
 
-size_t mallocc = 0;
 static void* gc_malloc(size_t size) {
 	GCHeader* header = malloc(sizeof(GCHeader) + size);
 	header->size = size;
 	gc_size += size;
-	printf("%zu\n", ++mallocc);
 	return (void*)(header + 1);
 }
 
@@ -4427,6 +4424,7 @@ tug_Object* tug_calls(tug_Task* T, tug_Object* func, size_t n, ...) {
 
 	call_obj(T, func, fargs, 1, 0);
 	if (T->state != TASK_ERROR) task_exec(T);
+	pop_value(T);
 	return get_ret(T);
 }
 
@@ -4445,6 +4443,7 @@ tug_Object* tug_pcalls(tug_Task* T, int* errptr, tug_Object* func, size_t n, ...
 	if (T->state == TASK_ERROR) {
 		T->state = TASK_RUNNING;
 	}
+	pop_value(T);
 	return get_ret(T);
 }
 
@@ -4459,6 +4458,7 @@ tug_Object* tug_call(tug_Task* T, tug_Object* func, tug_Object* arg) {
 
 	call_obj(T, func, args, 0, 0);
 	if (T->state != TASK_ERROR) task_exec(T);
+	pop_value(T);
 	return get_ret(T);
 }
 
@@ -4477,6 +4477,7 @@ tug_Object* tug_pcall(tug_Task* T, int* errptr, tug_Object* func, tug_Object* ar
 	if (T->state == TASK_ERROR) {
 		T->state = TASK_RUNNING;
 	}
+	pop_value(T);
 	return get_ret(T);
 }
 
@@ -4585,6 +4586,20 @@ tug_TaskState tug_getstate(tug_Task* T) {
 }
 
 void tug_init(void) {
+	#ifdef __ANDROID__
+
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	seed_id = (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+
+	#elif defined(__linux__)
+
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	seed_id = (uint64_t)tv.tv_sec * 1000000000ULL + (uint64_t)tv.tv_usec * 1000ULL;
+
+	#endif
+	
 	compiler_init();
 	gc_init();
 }
