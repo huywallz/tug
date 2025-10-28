@@ -4143,6 +4143,9 @@ static void task_exec(Task* task) {
 							set_var(task, vec_get(names, 1), iter_obj->iter.entry->value);
 						}
 						iter_obj->iter.entry = iter_obj->iter.entry->next;
+						while (iter_obj->iter.entry == NULL && ++iter_obj->iter.idx < table->capacity) {
+							iter_obj->iter.entry = table->buckets[iter_obj->iter.idx];
+						}
 						used = 2;
 					}
 				} else {

@@ -613,6 +613,7 @@ static void __tuglib_split(tug_Task* T) {
 			size_t part_len = found - start;
 			part = realloc(part, part_len + 1);
 			memcpy(part, start, part_len);
+			part[part_len] = '\0';
 			tug_setindex(tres, tug_num((double)tug_getlen(tres)), tug_str(part));
 
 			start = found + delim_len;
