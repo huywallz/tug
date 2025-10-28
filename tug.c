@@ -2533,9 +2533,14 @@ static Bytecode* gen_bc(const char* src, const char* text, char* errmsg) {
 	}
 	emit_byte(OP_HALT);
 
+	#if TUG_DEBUG
+
 	BCReader R;
 	bcreader_init(&R, bc, 0);
 	while (bcreader_read(&R));
+	printf("\n");
+
+	#endif
 
 	return bc;
 }

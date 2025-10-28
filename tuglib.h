@@ -460,6 +460,26 @@ static void __tuglib_sub(tug_Task* T) {
 	free(res);
 }
 
+static void __tuglib_concat(tug_Task* T) {
+	size_t argc = tug_getargc(T);
+	const char* strs[argc];
+	size_t len = 0;
+	for (size_t i = 0; i < argc; i++) {
+		const char* str = tuglib_checkstr(T, i);
+		strs[i] = str;
+		len += strlen(str);
+	}
+
+	char* res = malloc(len + 1);
+	res[0] = '\0';
+	for (size_t i = 0; i < argc; i++) {
+		strcat(res, strs[i]);
+	}
+
+	tug_ret(T, tug_str(res));
+	free(res);
+}
+
 static void tuglib_loadbuiltins(tug_Task* T) {
 	tug_setglobal(T, "print", tug_cfunc("print", __tuglib_print));
 	tug_setglobal(T, "tostr", tug_cfunc("tostr", __tuglib_tostr));
@@ -496,6 +516,7 @@ static void tuglib_loadbuiltins(tug_Task* T) {
 	
 	tug_Object* strlib = tug_table();
 	tug_setindex(strlib, tug_str("sub"), tug_cfunc("sub", __tuglib_sub));
+	tug_setindex(strlib, tug_str("concat"), tug_cfunc("concat", __tuglib_concat));
 	tug_setglobal(T, "str", strlib);
 }
 
