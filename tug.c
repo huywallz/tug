@@ -2296,6 +2296,19 @@ static void compile_node(Node* node) {
 	}
 }
 
+#if TUG_DEBUG
+
+typedef struct {
+	Bytecode* bc;
+	size_t ptr;
+} BCReader;
+
+void bcreader_init(BCReader* reader) {
+	
+}
+
+#endif
+
 static Bytecode* gen_bc(const char* src, const char* text, char* errmsg) {
 	pinit(src, text);
 	if (ltok()) {
@@ -3284,7 +3297,7 @@ static void task_exec(Task* task) {
 	#endif
 	while (1) {
 		uint8_t op = read_byte(task);
-		//printf("%zu %s\n", task->frame->iptr, get_opname(op));
+		printf("%s %zu %s\n", task->frame->name, task->frame->iptr, get_opname(op));
 
 		switch (op) {
 			case OP_NUM: {
