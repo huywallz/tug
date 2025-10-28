@@ -3,3 +3,8 @@ print(str.trim("            HELLO               "))
 print(str.upper("this is a lowercase text but become upper"))
 print(str.repeat("abc", 5))
 print(str.reverse("this is reversed text"))
+
+t := str.split("a,b,c,d,e,f,g,h,i,j,k,l,m,n", ",")
+for _, v in t do
+    print(v)
+end

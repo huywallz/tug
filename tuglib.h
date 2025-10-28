@@ -594,6 +594,39 @@ static void __tuglib_repeat(tug_Task* T) {
 	free(res);
 }
 
+static void __tuglib_split(tug_Task* T) {
+	const char* str = tuglib_checkstr(T, 0);
+	const char* delim = tuglib_checkstr(T, 1);
+
+	tug_Object* tres = tug_table();
+	size_t delim_len = strlen(delim);
+	if (delim_len == 0) {
+		for (size_t i = 0; str[i]; i++) {
+			char tmp[2] = {str[i], '\0'};
+			tug_setindex(tres, tug_num((double)i), tug_str(tmp));
+		}
+	} else {
+		const char* start = str;
+		const char* found;
+		char* part = NULL;
+		while ((found = strstr(start, delim)) != NULL) {
+			size_t part_len = found - start;
+			part = realloc(part, part_len + 1);
+			memcpy(part, start, part_len);
+			tug_setindex(tres, tug_num((double)tug_getlen(tres)), tug_str(part));
+
+			start = found + delim_len;
+		}
+		free(part);
+
+		if (*start) {
+			tug_setindex(tres, tug_num((double)tug_getlen(tres)), tug_str(start));
+		}
+	}
+
+	tug_ret(T, tres);
+}
+
 static void tuglib_loadbuiltins(tug_Task* T) {
 	tug_setglobal(T, "print", tug_cfunc("print", __tuglib_print));
 	tug_setglobal(T, "tostr", tug_cfunc("tostr", __tuglib_tostr));
@@ -638,6 +671,7 @@ static void tuglib_loadbuiltins(tug_Task* T) {
 	tug_setindex(strlib, tug_str("lower"), tug_cfunc("lower", __tuglib_lower));
 	tug_setindex(strlib, tug_str("reverse"), tug_cfunc("reverse", __tuglib_reverse));
 	tug_setindex(strlib, tug_str("repeat"), tug_cfunc("repeat", __tuglib_repeat));
+	tug_setindex(strlib, tug_str("split"), tug_cfunc("split", __tuglib_split));
 	tug_setglobal(T, "str", strlib);
 }
 
