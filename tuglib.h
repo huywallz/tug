@@ -7,6 +7,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
+#include <ctype.h>
 #include "tug.h"
 
 #define tuglib_isnew(T) (tug_getstate(T) == TUG_NEW)
@@ -462,7 +463,7 @@ static void __tuglib_sub(tug_Task* T) {
 
 static void __tuglib_concat(tug_Task* T) {
 	size_t argc = tug_getargc(T);
-	const char* strs[argc];
+	const char** strs = malloc(sizeof(const char*) * argc);
 	size_t len = 0;
 	for (size_t i = 0; i < argc; i++) {
 		const char* str = tuglib_checkstr(T, i);
@@ -475,6 +476,53 @@ static void __tuglib_concat(tug_Task* T) {
 	for (size_t i = 0; i < argc; i++) {
 		strcat(res, strs[i]);
 	}
+
+	tug_ret(T, tug_str(res));
+	free(res);
+	free(strs);
+}
+
+static void __tuglib_trim(tug_Task* T) {
+	const char* str = tuglib_checkstr(T, 0);
+	size_t len = strlen(str);
+
+	size_t start = 0;
+	while (start < len && isspace((unsigned char)str[start])) start++;
+
+	size_t end = len;
+	while (end > start && isspace((unsigned char)str[end - 1])) end--;
+
+	size_t newlen = end - start;
+	char* res = malloc(newlen + 1);
+	memcpy(res, str + start, newlen);
+	res[newlen] = '\0';
+
+	tug_ret(T, tug_str(res));
+	free(res);
+}
+
+static void __tuglib_ltrim(tug_Task* T) {
+	const char* str = tuglib_checkstr(T, 0);
+	size_t len = strlen(str);
+
+	size_t start = 0;
+	while (start < len && isspace((unsigned char)str[start])) start++;
+
+	char* res = malloc(strlen(str + start) + 1);
+	strcpy(res, str + start);
+
+	tug_ret(T, tug_str(res));
+	free(res);
+}
+
+static void __tuglib_rtrim(tug_Task* T) {
+	const char* str = tuglib_checkstr(T, 0);
+	size_t len = strlen(str);
+	while (len > 0 && isspace((unsigned char)str[len - 1])) len--;
+
+	char* res = malloc(len + 1);
+	memcpy(res, str, len);
+	res[len] = '\0';
 
 	tug_ret(T, tug_str(res));
 	free(res);
@@ -517,6 +565,9 @@ static void tuglib_loadbuiltins(tug_Task* T) {
 	tug_Object* strlib = tug_table();
 	tug_setindex(strlib, tug_str("sub"), tug_cfunc("sub", __tuglib_sub));
 	tug_setindex(strlib, tug_str("concat"), tug_cfunc("concat", __tuglib_concat));
+	tug_setindex(strlib, tug_str("trim"), tug_cfunc("trim", __tuglib_trim));
+	tug_setindex(strlib, tug_str("ltrim"), tug_cfunc("ltrim", __tuglib_ltrim));
+	tug_setindex(strlib, tug_str("rtrim"), tug_cfunc("rtrim", __tuglib_rtrim));
 	tug_setglobal(T, "str", strlib);
 }
 

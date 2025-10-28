@@ -1,1 +1,2 @@
 print(str.concat("hello ", "world!"))
+print(str.trim("            HELLO               "))
