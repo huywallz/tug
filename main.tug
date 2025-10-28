@@ -1,2 +1,5 @@
 print(str.concat("hello ", "world!"))
 print(str.trim("            HELLO               "))
+print(str.upper("this is a lowercase text but become upper"))
+print(str.repeat("abc", 5))
+print(str.reverse("this is reversed text"))

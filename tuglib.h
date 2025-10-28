@@ -528,6 +528,72 @@ static void __tuglib_rtrim(tug_Task* T) {
 	free(res);
 }
 
+static void __tuglib_upper(tug_Task* T) {
+	const char* str = tuglib_checkstr(T, 0);
+	size_t len = strlen(str);
+	char* res = malloc(len + 1);
+
+	for (size_t i = 0; i < len; i++) {
+		res[i] = toupper((unsigned char)str[i]);
+	}
+	res[len] = '\0';
+
+	tug_ret(T, tug_str(res));
+	free(res);
+}
+
+static void __tuglib_lower(tug_Task* T) {
+	const char* str = tuglib_checkstr(T, 0);
+	size_t len = strlen(str);
+	char* res = malloc(len + 1);
+
+	for (size_t i = 0; i < len; i++) {
+		res[i] = tolower((unsigned char)str[i]);
+	}
+	res[len] = '\0';
+
+	tug_ret(T, tug_str(res));
+	free(res);
+}
+
+static void __tuglib_reverse(tug_Task* T) {
+	const char* str = tuglib_checkstr(T, 0);
+	size_t len = strlen(str);
+	char* res = malloc(len + 1);
+
+	for (size_t i = 0; i < len; i++) {
+		res[i] = str[len - i - 1];
+	}
+	res[len] = '\0';
+
+	tug_ret(T, tug_str(res));
+	free(res);
+}
+
+static void __tuglib_repeat(tug_Task* T) {
+	const char* str = tuglib_checkstr(T, 0);
+	long count = tuglib_checklong(T, 1);
+
+	if (count <= 0) {
+		tug_ret(T, tug_str(""));
+		return;
+	}
+
+	size_t len = strlen(str);
+	size_t total = len * count;
+	char* res = malloc(total + 1);
+
+	char* ptr = res;
+	for (size_t i = 0; i < count; i++) {
+		memcpy(ptr, str, len);
+		ptr += len;
+	}
+	*ptr = '\0';
+
+	tug_ret(T, tug_str(res));
+	free(res);
+}
+
 static void tuglib_loadbuiltins(tug_Task* T) {
 	tug_setglobal(T, "print", tug_cfunc("print", __tuglib_print));
 	tug_setglobal(T, "tostr", tug_cfunc("tostr", __tuglib_tostr));
@@ -568,6 +634,10 @@ static void tuglib_loadbuiltins(tug_Task* T) {
 	tug_setindex(strlib, tug_str("trim"), tug_cfunc("trim", __tuglib_trim));
 	tug_setindex(strlib, tug_str("ltrim"), tug_cfunc("ltrim", __tuglib_ltrim));
 	tug_setindex(strlib, tug_str("rtrim"), tug_cfunc("rtrim", __tuglib_rtrim));
+	tug_setindex(strlib, tug_str("upper"), tug_cfunc("upper", __tuglib_upper));
+	tug_setindex(strlib, tug_str("lower"), tug_cfunc("lower", __tuglib_lower));
+	tug_setindex(strlib, tug_str("reverse"), tug_cfunc("reverse", __tuglib_reverse));
+	tug_setindex(strlib, tug_str("repeat"), tug_cfunc("repeat", __tuglib_repeat));
 	tug_setglobal(T, "str", strlib);
 }
 
