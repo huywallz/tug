@@ -1711,7 +1711,6 @@ static size_t emit_jump(uint8_t op, size_t addr, uint8_t pback) {
 
 static void patch_addr(size_t pos, size_t addr) {
 	memcpy(&main_bc->data[pos], &addr, sizeof(size_t));
-	main_bc->size += sizeof(size_t);
 }
 
 static void emit_bc(Bytecode* bc) {
@@ -2068,11 +2067,11 @@ static void compile_node(Node* node) {
 			Node_If* nif = (Node_If*)node->data;
 			pos_stack* stack = pos_stack_create();
 
-			emit_closure(1);
-
 			compile_node(nif->cond);
 			size_t upos = emit_jump(OP_JUMPF, 0, 0);
+			emit_closure(1);
 			compile_block(nif->block);
+			emit_closure(0);
 			emit_byte(OP_JUMP);
 			pos_stack_push(stack, emit_addr(0));
 			patch_addr(upos, main_bc->size);
@@ -2083,18 +2082,23 @@ static void compile_node(Node* node) {
 
 				compile_node(cond);
 				upos = emit_jump(OP_JUMPF, 0, 0);
+				emit_closure(1);
 				compile_block(block);
+				emit_closure(0);
 				emit_byte(OP_JUMP);
 				pos_stack_push(stack, emit_addr(0));
 				patch_addr(upos, main_bc->size);
 			}
-			if (nif->eblock) compile_block(nif->eblock);
+			if (nif->eblock) {
+				emit_closure(1);
+				compile_block(nif->eblock);
+				emit_closure(0);
+			}
 
 			while (!pos_stack_empty(stack)) {
 				patch_addr(pos_stack_pop(stack), main_bc->size);
 			}
 
-			emit_closure(0);
 			pos_stack_free(stack);
 		} break;
 
@@ -2301,10 +2305,202 @@ static void compile_node(Node* node) {
 typedef struct {
 	Bytecode* bc;
 	size_t ptr;
+	size_t scope;
 } BCReader;
 
-void bcreader_init(BCReader* reader) {
-	
+void bcreader_init(BCReader* reader, Bytecode* bc, size_t scope) {
+	reader->bc = bc;
+	reader->ptr = 0;
+	reader->scope = 0;
+}
+
+uint8_t bcreader_byte(BCReader* reader) {
+	return reader->bc->data[reader->ptr++];
+}
+
+double bcreader_num(BCReader* reader) {
+	double num;
+	memcpy(&num, &reader->bc->data[reader->ptr], sizeof(double));
+	reader->ptr += sizeof(double);
+	return num;
+}
+
+const char* bcreader_str(BCReader* reader) {
+	const char* str = (const char*)&reader->bc->data[reader->ptr];
+	size_t len = strlen(str) + 1;
+	reader->ptr += len;
+	return str;
+}
+
+size_t bcreader_addr(BCReader* reader) {
+	size_t addr;
+	memcpy(&addr, &reader->bc->data[reader->ptr], sizeof(size_t));
+	reader->ptr += sizeof(size_t);
+	return addr;
+}
+
+int bcreader_read(BCReader* reader);
+void bcreader_bc(BCReader* reader) {
+	size_t size = bcreader_addr(reader);
+	uint8_t* data = gc_malloc(size);
+	memcpy(data, &reader->bc->data[reader->ptr], size);
+	reader->ptr += size;
+
+	Bytecode* bc = gc_malloc(sizeof(Bytecode));
+	bc->size = bc->capacity = size;
+	bc->data = data;
+	bc->ref = 0;
+
+	BCReader R;
+	bcreader_init(&R, bc, reader->scope + 1);
+	while (bcreader_read(&R));
+	gc_free(data);
+	gc_free(bc);
+}
+
+int bcreader_read(BCReader* reader) {
+	if (reader->ptr >= reader->bc->size) return 0;
+
+	for (size_t i = 0; i < reader->scope; i++) {
+		printf("  ");
+	}
+	printf("%zu ", reader->ptr);
+	uint8_t op = bcreader_byte(reader);
+	const char* opname = get_opname(op);
+	printf("%s ", opname);
+	switch (op) {
+		case OP_NUM: {
+			double num = bcreader_num(reader);
+			printf("%.17g", num);
+		} break;
+		case OP_STR: 
+		case OP_VAR: {
+			const char* str = bcreader_str(reader);
+			printf("|%s|", str);
+		} break;
+		case OP_ADD:
+		case OP_SUB:
+		case OP_MUL:
+		case OP_DIV:
+		case OP_MOD: 
+		case OP_GT:
+		case OP_LT: 
+		case OP_GE:
+		case OP_LE: 
+		case OP_EQ:
+		case OP_NE:
+		case OP_POS:
+		case OP_NEG:
+		case OP_NOT:
+		case OP_GETINDEX:
+		case OP_ITER: {
+			size_t ln = bcreader_addr(reader);
+			printf("ln:%zu", ln);
+		} break;
+
+		case OP_HALT:
+		case OP_TRUE:
+		case OP_FALSE:
+		case OP_NIL:
+		case OP_DEBUG_PRINT:
+		case OP_PUSH_CLOSURE:
+		case OP_POP_CLOSURE:
+		case OP_TABLE:
+		break;
+
+		case OP_POP:
+		case OP_JUMP:
+		case OP_TUPLE: {
+			size_t c = bcreader_addr(reader);
+			printf("%zu", c);
+		} break;
+
+		case OP_JUMPT:
+		case OP_JUMPF: {
+			size_t addr = bcreader_addr(reader);
+			uint8_t pback = bcreader_byte(reader);
+			printf("addr:%zu pback:%d", addr, pback);
+		} break;
+
+		case OP_STORE: {
+			uint8_t local = bcreader_byte(reader);
+			size_t count = bcreader_addr(reader);
+			printf("local:%d count:%zu", local, count);
+			for (size_t i = 0; i < count; i++) {
+				const char* name = bcreader_str(reader);
+				printf(" %s", name);
+			}
+		} break;
+
+		case OP_JUMPP: {
+			printf("count:%zu addr:%zu", bcreader_addr(reader), bcreader_addr(reader));
+		} break;
+
+		case OP_FUNCDEF: {
+			size_t ln = bcreader_addr(reader);
+			size_t namec = bcreader_addr(reader);
+			printf("ln:%zu namec:%zu", ln, namec);
+			if (namec == 0) {
+				printf(" <anonymous>");
+			} else {
+				for (size_t i = 0; i < namec; i++) {
+					printf(" %s", bcreader_str(reader));
+				}
+			}
+
+			size_t count = bcreader_addr(reader);
+			printf(" count:%zu\n", count);
+			bcreader_bc(reader);
+		} break;
+
+		case OP_CALL: {
+			size_t argc = bcreader_addr(reader);
+			size_t ln = bcreader_addr(reader);
+			printf("argc:%zu ln:%zu", argc, ln);
+		} break;
+
+		case OP_SETINDEX: {
+			size_t ln = bcreader_addr(reader);
+			uint8_t push = bcreader_byte(reader);
+			printf("ln:%zu push:%d", ln, push);
+		} break;
+
+		case OP_MULTIASSIGN: {
+			size_t ln = bcreader_addr(reader);
+			uint8_t local = bcreader_byte(reader);
+			size_t valuec = bcreader_addr(reader);
+			size_t assignc = bcreader_addr(reader);
+
+			printf("ln:%zu local:%d valuec:%zu assignc:%zu", ln, local, valuec, assignc);
+			printf(" kinds:");
+			for (size_t i = 0; i < assignc; i++) {
+				uint8_t kind = bcreader_byte(reader);
+				printf("%d", kind);
+				if (kind) {
+					const char* name = bcreader_str(reader);
+					printf(":%s", name);
+				}
+				if (i < assignc - 1) printf(",");
+			}
+		} break;
+		
+		case OP_NEXT: {
+			size_t ln = bcreader_addr(reader);
+			size_t count = bcreader_addr(reader);
+			printf("ln:%zu count:%zu", ln, count);
+
+			for (size_t i = 0; i < count; i++) {
+				const char* name = bcreader_str(reader);
+				printf(" %s", name);
+			}
+
+			size_t pos = bcreader_addr(reader);
+			printf(" pos:%zu", pos);
+		} break;
+	}
+
+	printf("\n");
+	return 1;
 }
 
 #endif
@@ -2336,6 +2532,10 @@ static Bytecode* gen_bc(const char* src, const char* text, char* errmsg) {
 		node = NULL;
 	}
 	emit_byte(OP_HALT);
+
+	BCReader R;
+	bcreader_init(&R, bc, 0);
+	while (bcreader_read(&R));
 
 	return bc;
 }
@@ -3297,7 +3497,7 @@ static void task_exec(Task* task) {
 	#endif
 	while (1) {
 		uint8_t op = read_byte(task);
-		printf("%s %zu %s\n", task->frame->name, task->frame->iptr, get_opname(op));
+		//printf("%s %zu %s\n", task->frame->name, task->frame->iptr, get_opname(op));
 
 		switch (op) {
 			case OP_NUM: {
