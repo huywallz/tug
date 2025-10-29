@@ -49,6 +49,7 @@ void tug_listpush(tug_Object* list, tug_Object* obj);
 tug_Object* tug_listpop(tug_Object* list, size_t idx);
 void tug_listinsert(tug_Object* list, size_t idx, tug_Object* obj);
 int tug_listset(tug_Object* list, size_t idx, tug_Object* obj);
+void tug_listclear(tug_Object* list);
 
 unsigned long tug_getid(tug_Object* obj);
 tug_Type tug_gettype(tug_Object* obj);

@@ -4563,6 +4563,10 @@ int tug_listset(tug_Object* list, size_t idx, tug_Object* obj) {
 	return 1;
 }
 
+void tug_listclear(tug_Object* list) {
+	list->list->count = 0;
+}
+
 unsigned long tug_getid(tug_Object* obj) {
 	return obj->id;
 }

@@ -111,6 +111,7 @@ static int tuglib_checkbool(tug_Task* T, size_t idx) {
 #define tuglib_checknil(T, idx) (tuglib_checktype(T, idx, TUG_FUNC))
 #define tuglib_checkfunc(T, idx) (tuglib_checktype(T, idx, TUG_FUNC))
 #define tuglib_checktable(T, idx) (tuglib_checktype(T, idx, TUG_TABLE))
+#define tuglib_checklist(T, idx) (tuglib_checktype(T, idx, TUG_LIST))
 
 #define tuglib_isany(T, idx) tug_hasarg((T), (idx))
 #define tuglib_isnone(T, idx) (!tuglib_isany(T, idx))
@@ -128,6 +129,7 @@ static int tuglib_isbool(tug_Task* T, size_t idx) {
 #define tuglib_isnil(T, idx) tuglib_istype(T, idx, TUG_NIL)
 #define tuglib_isfunc(T, idx) tuglib_istype(T, idx, TUG_FUNC)
 #define tuglib_istable(T, idx) tuglib_istype(T, idx, TUG_TABLE)
+#define tuglib_islist(T, idx) tuglib_istype(T, idx, TUG_LIST)
 
 #define tuglib_optany(T, idx, def) (tuglib_isnone((T), (idx)) ? (def) : tuglib_checkany((T), (idx)))
 #define tuglib_opttype(T, idx, expected, def) (tuglib_isnone((T), (idx)) ? (def) : tuglib_checktype((T), (idx), (expected)))
@@ -139,6 +141,7 @@ static int tuglib_isbool(tug_Task* T, size_t idx) {
 #define tuglib_optnil(T, idx, def) (tuglib_isnone((T), (idx)) ? (def) : tuglib_checknil((T), (idx)))
 #define tuglib_optfunc(T, idx, def) (tuglib_isnone((T), (idx)) ? (def) : tuglib_checkfunc((T), (idx)))
 #define tuglib_opttable(T, idx, def) (tuglib_isnone((T), (idx)) ? (def) : tuglib_checktable((T), (idx)))
+#define tuglib_optlist(T, idx, def) (tuglib_isnone((T), (idx)) ? (def) : tuglib_checklist((T), (idx)))
 
 #define tuglib_gettypename(obj) tuglib_typename(tug_gettype((obj)))
 
@@ -619,6 +622,36 @@ static void __tuglib_split(tug_Task* T) {
 	}
 
 	tug_ret(T, res);
+}
+
+static void __tuglib_push(tug_Task* T) {
+	tug_Object* list = tuglib_checklist(T, 0);
+	tug_Object* obj = tuglib_checkany(T, 1);
+
+	tug_listpush(list, obj);
+}
+
+static void __tuglib_pop(tug_Task* T) {
+	tug_Object* list = tuglib_checklist(T, 0);
+	size_t len = tug_getlen(list);
+	long idx = tuglib_optlong(T, 1, len - 1);
+	if (idx < 0 || idx >= len) tug_err(T, "pop index out of range");
+
+	Object* pop = tug_listpop(list, idx);
+	tug_ret(T, pop);
+}
+
+static void __tuglib_insert(tug_Task* T) {
+	tug_Object* list = tuglib_checklist(T, 0);
+	long idx = tuglib_checklong(T, 1);
+	if (idx < 0 || idx >= tug_getlen(list)) tug_err(T, "pop index out of range");
+	tug_Object* obj = tuglib_checkany(T, 2);
+
+	tug_listinsert(list, idx, obj);
+}
+
+static void __tuglib_clear(tug_Task* T) {
+	tug_listclear(tuglib_checklist(T, 0));
 }
 
 static void tuglib_loadbuiltins(tug_Task* T) {
