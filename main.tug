@@ -1,5 +1,4 @@
-l := [1,2,3]
-l[99] = 69
-for i in l do
-	print(i)
+res := str.split("hello, world, this, is, good, idk, maybe", "")
+for s in res do
+	print(s)
 end

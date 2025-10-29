@@ -591,12 +591,12 @@ static void __tuglib_split(tug_Task* T) {
 	const char* str = tuglib_checkstr(T, 0);
 	const char* delim = tuglib_checkstr(T, 1);
 
-	tug_Object* tres = tug_table();
+	tug_Object* res = tug_list();
 	size_t delim_len = strlen(delim);
 	if (delim_len == 0) {
 		for (size_t i = 0; str[i]; i++) {
 			char tmp[2] = {str[i], '\0'};
-			tug_setfield(tres, tug_num((double)i), tug_conststr(tmp));
+			tug_listpush(res, tug_conststr(tmp));
 		}
 	} else {
 		const char* start = str;
@@ -607,18 +607,18 @@ static void __tuglib_split(tug_Task* T) {
 			part = realloc(part, part_len + 1);
 			memcpy(part, start, part_len);
 			part[part_len] = '\0';
-			tug_setfield(tres, tug_num((double)tug_getlen(tres)), tug_conststr((const char*)part));
+			tug_listpush(res, tug_conststr((const char*)part));
 
 			start = found + delim_len;
 		}
 		free(part);
 
 		if (*start) {
-			tug_setfield(tres, tug_num((double)tug_getlen(tres)), tug_conststr(start));
+			tug_listpush(res, tug_conststr((const char*)start));
 		}
 	}
 
-	tug_ret(T, tres);
+	tug_ret(T, res);
 }
 
 static void tuglib_loadbuiltins(tug_Task* T) {
