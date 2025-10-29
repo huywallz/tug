@@ -133,6 +133,7 @@ enum {
 	FUNCDEF, FUNCCALL,
 	TUPLE, TABLE, INDEX, SETINDEX,
 	ITER_STR, ITER_TABLE,
+	LIST, ITER_LIST,
 };
 
 typedef struct Node Node;
@@ -555,29 +556,6 @@ static Node* node_debugprint(Node* expr) {
 
 #endif
 
-// this was originally for variable testing
-/*
-typedef struct {
-	char** names;
-	size_t ncount;
-	Node** values;
-	size_t vcount;
-} Node_Assign;
-
-Node* node_assign_one(int kind, const char* name, Node* node) {
-	Node_Assign* assign = gc_malloc(sizeof(Node_Assign));
-	assign->names = gc_malloc(sizeof(char*));
-	assign->names[0] = (char*)name;
-	assign->ncount = 1;
-	
-	assign->values = gc_malloc(sizeof(Node*));
-	assign->values[0] = node;
-	assign->vcount = 1;
-	
-	return node_create(kind, assign);
-}
-*/
-
 typedef struct {
 	Node** nodes;
 	size_t count;
@@ -690,29 +668,6 @@ static Node* node_table(Vector* keys, Vector* values) {
 
 	return node_create(TABLE, ntable);
 }
-
-// originally used for set index
-/*
-typedef struct {
-	Node* node;
-	Node* key;
-	Node* value;
-	size_t ln;
-} Node_SetIndex;
-
-Node* node_indexconvert(Node* inode, Node* value, size_t ln) {
-	Node_SetIndex* setindex = gc_malloc(sizeof(Node_SetIndex));
-	Node_BinOp* binop = (Node_BinOp*)inode->data;
-	
-	setindex->node = binop->o1;
-	setindex->key = binop->o2;
-	setindex->value = value;
-	setindex->ln = ln;
-	gc_free(binop);
-	
-	return node_create(SETINDEX, setindex);
-}
-*/
 
 typedef struct {
 	Vector* names;
@@ -827,24 +782,6 @@ static void node_free(Node* node) {
 
 		#endif
 
-		// old assign code
-		/*
-		case ASSIGN:
-		case LOCAL: {
-			Node_Assign* assign = (Node_Assign*)node->data;
-			
-			for (size_t i = 0; i < assign->ncount; i++) {
-				gc_free(assign->names[i]);
-			}
-			gc_free(assign->names);
-			
-			for (size_t i = 0; i < assign->vcount; i++) {
-				node_free(assign->values[i]);
-			}
-			gc_free(assign->values);
-		} break;
-		*/
-
 		case IF: {
 			Node_If* nif = (Node_If*)node->data;
 
@@ -880,6 +817,7 @@ static void node_free(Node* node) {
 			vec_advfree(funccall->values, node_free);
 		} break;
 
+		case LIST:
 		case RETURN: {
 			vec_advfree(node->data, node_free);
 			node->data = NULL;
@@ -892,16 +830,6 @@ static void node_free(Node* node) {
 				vec_advfree(ntable->values, node_free);
 			}
 		} break;
-
-		// old set index code
-		/*
-		case SETINDEX: {
-			Node_SetIndex* setindex = (Node_SetIndex*)node->data;
-			node_free(setindex->node);
-			node_free(setindex->key);
-			node_free(setindex->value);
-		} break;
-		*/
 
 		case FOR: {
 			Node_For* nfor = (Node_For*)node->data;
@@ -944,6 +872,7 @@ static int node_isexpr(Node* node) {
 		case NAME:
 		case FUNCCALL:
 		case INDEX:
+		case LIST:
 		return 1;
 		default:
 		return 0;
@@ -1084,6 +1013,38 @@ static int pval(void) {
 		}
 		
 		node = node_funcdef(NULL, params, block, ln);
+		return ltok();
+	} else if (tkind == LBRACK) {
+		if (ltok()) return 1;
+		if (tkind == RBRACK) {
+			node = node_create(LIST, NULL);
+			return ltok();
+		}
+		
+		Vector* nodes = vec_create();
+		while (1) {
+			if (pexpr()) {
+				vec_advfree(nodes, node_free);
+				return 0;
+			}
+			vec_push(nodes, node);
+			
+			if (tkind == COMMA) {
+				if (ltok()) {
+					vec_advfree(nodes, node_free);
+					return 0;
+				}
+			} else if (tkind != RBRACK) {
+				vec_advfree(nodes, node_free);
+				return perr("expected ',' or ']'");
+			}
+			
+			if (tkind == RBRACK) {
+				break;
+			}
+		}
+		
+		node = node_create(LIST, nodes);
 		return ltok();
 	}
 
@@ -1603,38 +1564,6 @@ static int pstmt(void) {
 		}
 	}
 
-	// old assign code, ya
-	/*
-	if (node->kind == NAME && (tkind == LOCAL || tkind == ASSIGN)) {
-		int kind = tkind;
-		if (ltok()) return 1;
-		Node* name_node = node;
-		node = NULL;
-		if (pexpr()) {
-			node_free(node);
-			return 1;
-		}
-		
-		char* name = ((Node_Str*)name_node->data)->str;
-		gc_free(name_node->data);
-		gc_free(name_node);
-		node = node_assign_one(kind, name, node);
-		
-		return 0;
-	} else if (node->kind == INDEX && tkind == ASSIGN) {
-		size_t ln = tln;
-		Node* inode = node;
-		node = NULL;
-		if (ltok() || pexpr()) {
-			node_free(inode);
-			return 1;
-		}
-		
-		node = node_indexconvert(inode, node, ln);
-		return 0;
-	}
-	*/
-
 	return 0;
 }
 
@@ -1841,6 +1770,7 @@ enum {
 	OP_TABLE, OP_SETINDEX, OP_GETINDEX,
 	OP_MULTIASSIGN,
 	OP_ITER, OP_NEXT,
+	OP_LIST,
 	OP_HALT,
 
 	#if TUG_DEBUG
@@ -1892,6 +1822,7 @@ const char* get_opname(uint8_t op) {
 		case OP_ITER: return "OP_ITER";
 		case OP_NEXT: return "OP_NEXT";
 		case OP_HALT: return "OP_HALT";
+		case OP_LIST: return "OP_LIST";
 	
 		#if TUG_DEBUG
 	
@@ -2021,37 +1952,7 @@ static void compile_node(Node* node) {
 			compile_node(binop->o2);
 			patch_addr(pos, main_bc->size);
 		} break;
-
-		// yes, its old code
-		/*
-		case LOCAL:
-		case ASSIGN: {
-			Node_Assign* assign = (Node_Assign*)node->data;
-			size_t ncount = assign->ncount;
-			size_t vcount = assign->vcount;
-			
-			for (size_t i = 0; i < vcount; i++) {
-				compile_node(assign->values[i]);
-			}
-			
-			if (vcount < ncount) {
-				for (size_t i = 0; i < (ncount - vcount); i++) {
-					emit_byte(OP_NIL);
-				}
-			} else if (vcount > ncount) {
-				emit_byte(OP_POP);
-				emit_addr(vcount - ncount);
-			}
-			
-			emit_byte(OP_STORE);
-			emit_byte(node->kind == LOCAL);
-			emit_addr(ncount);
-			for (size_t i = ncount; i-- > 0;) {
-				emit_str(assign->names[i]);
-			}
-		} break;
-		 */
-
+		
 		case POS:
 		case NEG:
 		case NOT: {
@@ -2224,21 +2125,7 @@ static void compile_node(Node* node) {
 				}
 			}
 		} break;
-
-		// cool old code
-		/*
-		case SETINDEX: {
-			Node_SetIndex* setindex = (Node_SetIndex*)node->data;
-			compile_node(setindex->node);
-			compile_node(setindex->key);
-			compile_node(setindex->value);
-			
-			emit_byte(OP_SETINDEX);
-			emit_addr(setindex->ln);
-			emit_byte(0);
-		} break;
-		*/
-
+		
 		case ASSIGN: {
 			Node_Assignment* assignment = (Node_Assignment*)node->data;
 			Vector* assigns = assignment->assigns;
@@ -2296,6 +2183,22 @@ static void compile_node(Node* node) {
 			pop_loop(main_bc->size);
 
 			emit_closure(0);
+		} break;
+		
+		case LIST: {
+			Vector* list = (Vector*)node->data;
+			if (list) {
+				size_t count = vec_count(list);
+				for (size_t i = 0; i < count; i++) {
+					compile_node(vec_get(list, i));
+				}
+				
+				emit_byte(OP_LIST);
+				emit_addr(count);
+			} else {
+				emit_byte(OP_LIST);
+				emit_addr(0);
+			}
 		} break;
 	}
 }
@@ -2410,7 +2313,8 @@ int bcreader_read(BCReader* reader) {
 
 		case OP_POP:
 		case OP_JUMP:
-		case OP_TUPLE: {
+		case OP_TUPLE:
+		case OP_LIST: {
 			size_t c = bcreader_addr(reader);
 			printf("%zu", c);
 		} break;
@@ -2572,6 +2476,7 @@ typedef struct tug_Object {
 			size_t idx;
 			struct TableEntry* entry;
 		} iter;
+		Vector* list;
 	};
 	uint8_t collected;
 	uint8_t marked;
@@ -2618,6 +2523,7 @@ static Object* obj_iter(Object* obj) {
 		kind = ITER_TABLE;
 	}
 	else if (obj->kind == STR) kind = ITER_STR;
+	else if (obj->kind == LIST) kind = ITER_LIST;
 	else return NULL;
 
 	Object* iter_obj = obj_create(kind);
@@ -2687,19 +2593,19 @@ static Object* obj_table(struct Table* table) {
 
 static void table_free(struct Table* table);
 static void obj_free(Object* obj) {
-	if (obj->kind == STR) {
-		gc_free(obj->str);
-	} else if (obj->kind == FUNC) {
-		if (!obj->func.cfunc) {
-			gc_free(obj->func.src);
-			vec_stdfree(obj->func.params);
-			bc_free(obj->func.bc);
-		}
-		gc_free(obj->func.name);
-	} else if (obj->kind == TUPLE) {
-		vec_free(obj->tuple);
-	} else if (obj->kind == TABLE) {
-		table_free(obj->table);
+	switch (obj->kind) {
+		case STR: gc_free(obj->str); break;
+		case FUNC: {
+			if (!obj->func.cfunc) {
+				gc_free(obj->func.src);
+				vec_stdfree(obj->func.params);
+				bc_free(obj->func.bc);
+			}
+			gc_free(obj->func.name);
+		} break;
+		case LIST: vec_free(obj->list); break;
+		case TUPLE: vec_free(obj->tuple); break;
+		case TABLE: table_free(obj->table); break;
 	}
 	
 	if (obj_poolc < OBJ_POOL_LIMIT) {
@@ -2716,6 +2622,7 @@ static const char* obj_type(Object* obj) {
 		case NIL: return "nil";
 		case FUNC: return "func";
 		case TABLE: return "table";
+		case LIST: return "list";
 		default: return "unknown";
 	}
 }
@@ -2747,6 +2654,9 @@ static void obj_print(Object* obj) {
 		case TABLE: {
 			printf("table: 0x%lx\n", obj->id);
 		} break;
+		case LIST: {
+			printf("list: 0x%lx\n", obj->id);
+		} break;
 		default: {
 			printf("unknown\n");
 		} break;
@@ -2772,6 +2682,7 @@ static int obj_check(Object* obj) {
 		case STR: return obj->str[0] != '\0';
 		case FALSE:
 		case NIL: return 0;
+		case LIST: return obj->list->count != 0;
 		default: return 1;
 	}
 }
@@ -4148,6 +4059,12 @@ static void task_exec(Task* task) {
 						}
 						used = 2;
 					}
+				} else if (iter_obj->kind == ITER_LIST) {
+					Vector* list = iter_obj->iter.obj->list;
+					if (iter_obj->iter.idx < vec_count(list)) {
+						set_var(task, vec_get(names, 0), vec_get(list, iter_obj->iter.idx++));
+						used = 1;
+					} else done = 1;
 				} else {
 					Object* func = tuglib_getmetafield(iter_obj, "__next");
 
@@ -4185,6 +4102,18 @@ static void task_exec(Task* task) {
 					}
 				}
 				vec_free(names);
+			} break;
+			
+			case OP_LIST: {
+				size_t count = read_addr(task);
+				Vector* list = vec_create();
+				for (size_t i = 0; i < count; i++) {
+					vec_pushfirst(list, pop_value(task));
+				}
+				
+				Object* obj = gc_obj(obj_create(LIST));
+				obj->list = list;
+				push_obj(task, obj);
 			} break;
 		}
 
@@ -4377,12 +4306,16 @@ static void gc_mark_obj(Object* obj) {
 		}
 		
 		gc_mark_obj(obj->metatable);
-	} else if (obj->kind == ITER_STR || obj->kind == ITER_TABLE) gc_mark_obj(obj->iter.obj);
+	} else if (obj->kind == ITER_STR || obj->kind == ITER_TABLE || obj->kind == ITER_LIST) gc_mark_obj(obj->iter.obj);
 	else if (obj->kind == FUNC) {
 		VarMap* map = obj->func.upper;
 		while (map) {
 			gc_mark_closure(map);
 			map = map->next;
+		}
+	} else if (obj->kind == LIST) {
+		for (size_t i = 0; i < vec_count(obj->list); i++) {
+			gc_mark_obj(vec_get(obj->list, i));
 		}
 	}
 }
@@ -4548,6 +4481,7 @@ tug_Type tug_gettype(tug_Object* obj) {
 		case NIL: return TUG_NIL;
 		case FUNC: return TUG_FUNC;
 		case TABLE: return TUG_TABLE;
+		case LIST: return TUG_LIST;
 		case TUPLE: return tug_gettype(obj->tuple->count > 0 ? vec_get(obj->tuple, 0) : obj_nil);
 		default: return TUG_UNKNOWN;
 	}
@@ -4561,16 +4495,16 @@ double tug_getnum(tug_Object* obj) {
 	return obj->num;
 }
 
-void tug_setindex(tug_Object* obj, tug_Object* key, tug_Object* value) {
+void tug_setfield(tug_Object* obj, tug_Object* key, tug_Object* value) {
 	table_set(obj->table, key, value);
 }
 
-tug_Object* tug_getindex(tug_Object* obj, tug_Object* key) {
+tug_Object* tug_getfield(tug_Object* obj, tug_Object* key) {
 	return table_get(obj->table, key);
 }
 
 size_t tug_getlen(tug_Object* obj) {
-	return obj->kind == STR ? strlen(obj->str) : obj->table->count;
+	return obj->kind == STR ? strlen(obj->str) : obj->kind == TABLE ? obj->table->count : obj->kind == LIST ? obj->list->count : 0;
 }
 
 void tug_setmetatable(tug_Object* obj, tug_Object* metatable) {

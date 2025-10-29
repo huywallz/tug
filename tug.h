@@ -13,6 +13,7 @@ typedef enum {
         TUG_FUNC,
         TUG_TABLE,
         TUG_TUPLE,
+        TUG_LIST,
         TUG_UNKNOWN,
 } tug_Type;
 
@@ -43,8 +44,8 @@ tug_Type tug_gettype(tug_Object* obj);
 
 const char* tug_getstr(tug_Object* obj);
 double tug_getnum(tug_Object* obj);
-void tug_setindex(tug_Object* obj, tug_Object* key, tug_Object* value);
-tug_Object* tug_getindex(tug_Object* obj, tug_Object* key);
+void tug_setfield(tug_Object* obj, tug_Object* key, tug_Object* value);
+tug_Object* tug_getfield(tug_Object* obj, tug_Object* key);
 size_t tug_getlen(tug_Object* obj);
 void tug_setmetatable(tug_Object* obj, tug_Object* metatable);
 tug_Object* tug_getmetatable(tug_Object* obj);
