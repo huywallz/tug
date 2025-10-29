@@ -2455,7 +2455,10 @@ struct TableEntry;
 typedef struct tug_Object {
 	int kind;
 	union {
-		char* str;
+		struct {
+			char* str;
+			uint8_t m;
+		};
 		double num;
 		struct {
 			char* src;
@@ -2507,6 +2510,7 @@ static Object* obj_create(int kind) {
 	}
 	obj->kind = kind;
 	obj->str = NULL;
+	obj->m = 0;
 	obj->marked = 0;
 	obj->collected = 0;
 
@@ -2594,7 +2598,10 @@ static Object* obj_table(struct Table* table) {
 static void table_free(struct Table* table);
 static void obj_free(Object* obj) {
 	switch (obj->kind) {
-		case STR: gc_free(obj->str); break;
+		case STR: {
+			if (obj->m) free(obj->str);
+			else gc_free(obj->str);	
+		} break;
 		case FUNC: {
 			if (!obj->func.cfunc) {
 				gc_free(obj->func.src);
@@ -3906,7 +3913,7 @@ static void task_exec(Task* task) {
 					char res[2];
 					res[0] = obj->str[idx];
 					res[1] = '\0';
-					push_obj(task, tug_str(res));
+					push_obj(task, tug_conststr(res));
 				} else if (obj->kind == LIST && key->kind == NUM) {
 					long idx = (long)key->num;
 					if (idx < 0) {
@@ -4052,7 +4059,7 @@ static void task_exec(Task* task) {
 						char str[2];
 						str[0] = iter_obj->iter.obj->str[iter_obj->iter.idx++];
 						str[1] = '\0';
-						set_var(task, vec_get(names, 0), tug_str(str));
+						set_var(task, vec_get(names, 0), tug_conststr(str));
 						used = 1;
 					} else {
 						done = 1;
@@ -4448,7 +4455,13 @@ tug_Object* tug_true = obj_true;
 tug_Object* tug_false = obj_false;
 tug_Object* tug_nil = obj_nil;
 
-tug_Object* tug_str(const char* str) {
+tug_Object* tug_str(char* str) {
+	Object* obj = new_str(str);
+	obj->m = 1;
+	return obj;
+}
+
+tug_Object* tug_conststr(const char* str) {
 	return new_str(gc_strdup(str));
 }
 

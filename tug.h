@@ -32,7 +32,8 @@ extern tug_Object* tug_true;
 extern tug_Object* tug_false;
 extern tug_Object* tug_nil;
 
-tug_Object* tug_str(const char* str);
+tug_Object* tug_str(char* str);
+tug_Object* tug_conststr(const char* str);
 tug_Object* tug_num(double num);
 tug_Object* tug_table(void);
 

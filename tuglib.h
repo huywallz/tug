@@ -25,13 +25,13 @@ static int tuglib_hasmetatable(tug_Object* obj) {
 static tug_Object* tuglib_getmetafield(tug_Object* obj, const char* key) {
 	if (!tuglib_hasmetatable(obj)) return tug_nil;
 	tug_Object* mtable = tug_getmetatable(obj);
-	return tug_getfield(mtable, tug_str(key));
+	return tug_getfield(mtable, tug_conststr(key));
 }
 
 static int tuglib_setmetafield(tug_Object* obj, const char* key, tug_Object* value) {
 	if (!tuglib_hasmetatable(obj)) return 0;
 	tug_Object* mtable = tug_getmetatable(obj);
-	tug_setfield(mtable, tug_str(key), value);
+	tug_setfield(mtable, tug_conststr(key), value);
 	
 	return 1;
 }
@@ -150,22 +150,20 @@ static tug_Object* tuglib_tostr(tug_Object* obj) {
 			char* res = malloc(50);
 			snprintf(res, 50, "%.17g", tug_getnum(obj));
 			tug_Object* str_obj = tug_str(res);
-			free(res);
 			return str_obj;
 		}
-		case TUG_TRUE: return tug_str("true");
-		case TUG_FALSE: return tug_str("false");
-		case TUG_NIL: return tug_str("nil");
+		case TUG_TRUE: return tug_conststr("true");
+		case TUG_FALSE: return tug_conststr("false");
+		case TUG_NIL: return tug_conststr("nil");
 		case TUG_FUNC:
 		case TUG_TABLE:
 		case TUG_LIST: {
 			char* res = malloc(50);
 			snprintf(res, 50, "%s: 0x%lx", tuglib_typename(obj_type), tug_getid(obj));
 			tug_Object* str_obj = tug_str(res);
-			free(res);
 			return str_obj;
 		}
-		default: return tug_str("<unknown>");
+		default: return tug_conststr("<unknown>");
 	}
 }
 
@@ -209,7 +207,7 @@ static void __tuglib_type(tug_Task* T) {
 			return;
 		}
 	}
-	else tug_ret(T, tug_str(tuglib_typename(tug_gettype(obj))));
+	else tug_ret(T, tug_conststr(tuglib_typename(tug_gettype(obj))));
 }
 
 static void __tuglib_len(tug_Task* T) {
@@ -246,7 +244,7 @@ static void __tuglib_getmetatable(tug_Task* T) {
 	tug_Object* mtable = tug_getmetatable(table);
 
 	if (mtable == tug_nil) return;
-	tug_Object* obj = tug_getfield(mtable, tug_str("__metatable"));
+	tug_Object* obj = tug_getfield(mtable, tug_conststr("__metatable"));
 	if (obj == tug_nil) tug_ret(T, mtable);
 	else tug_ret(T, obj);
 }
@@ -267,7 +265,7 @@ static void __tuglib_pcall(tug_Task* T) {
 	int err = 0;
 	tug_Object* res = tug_pcall(T, &err, func, args);
 	if (err) {
-		tug_rets(T, 2, tug_false, tug_str(tug_getmsg(T)));
+		tug_rets(T, 2, tug_false, tug_conststr(tug_getmsg(T)));
 	} else {
 		tug_rets(T, 2, tug_true, res);
 	}
@@ -453,7 +451,7 @@ static void __tuglib_sub(tug_Task* T) {
 	end = end < 0 ? 0 : end;
 	end = (size_t)end > len ? len : end;
 	if (start > end) {
-		tug_ret(T, tug_str(""));
+		tug_ret(T, tug_conststr(""));
 		return;
 	}
 	
@@ -462,7 +460,6 @@ static void __tuglib_sub(tug_Task* T) {
 	memcpy(res, str + start, flen);
 	res[flen] = '\0';
 	tug_ret(T, tug_str(res));
-	free(res);
 }
 
 static void __tuglib_concat(tug_Task* T) {
@@ -482,7 +479,6 @@ static void __tuglib_concat(tug_Task* T) {
 	}
 
 	tug_ret(T, tug_str(res));
-	free(res);
 	free(strs);
 }
 
@@ -502,7 +498,6 @@ static void __tuglib_trim(tug_Task* T) {
 	res[newlen] = '\0';
 
 	tug_ret(T, tug_str(res));
-	free(res);
 }
 
 static void __tuglib_ltrim(tug_Task* T) {
@@ -516,7 +511,6 @@ static void __tuglib_ltrim(tug_Task* T) {
 	strcpy(res, str + start);
 
 	tug_ret(T, tug_str(res));
-	free(res);
 }
 
 static void __tuglib_rtrim(tug_Task* T) {
@@ -529,7 +523,6 @@ static void __tuglib_rtrim(tug_Task* T) {
 	res[len] = '\0';
 
 	tug_ret(T, tug_str(res));
-	free(res);
 }
 
 static void __tuglib_upper(tug_Task* T) {
@@ -543,7 +536,6 @@ static void __tuglib_upper(tug_Task* T) {
 	res[len] = '\0';
 
 	tug_ret(T, tug_str(res));
-	free(res);
 }
 
 static void __tuglib_lower(tug_Task* T) {
@@ -557,7 +549,6 @@ static void __tuglib_lower(tug_Task* T) {
 	res[len] = '\0';
 
 	tug_ret(T, tug_str(res));
-	free(res);
 }
 
 static void __tuglib_reverse(tug_Task* T) {
@@ -571,7 +562,6 @@ static void __tuglib_reverse(tug_Task* T) {
 	res[len] = '\0';
 
 	tug_ret(T, tug_str(res));
-	free(res);
 }
 
 static void __tuglib_repeat(tug_Task* T) {
@@ -579,7 +569,7 @@ static void __tuglib_repeat(tug_Task* T) {
 	long count = tuglib_checklong(T, 1);
 
 	if (count <= 0) {
-		tug_ret(T, tug_str(""));
+		tug_ret(T, tug_conststr(""));
 		return;
 	}
 
@@ -595,7 +585,6 @@ static void __tuglib_repeat(tug_Task* T) {
 	*ptr = '\0';
 
 	tug_ret(T, tug_str(res));
-	free(res);
 }
 
 static void __tuglib_split(tug_Task* T) {
@@ -607,7 +596,7 @@ static void __tuglib_split(tug_Task* T) {
 	if (delim_len == 0) {
 		for (size_t i = 0; str[i]; i++) {
 			char tmp[2] = {str[i], '\0'};
-			tug_setfield(tres, tug_num((double)i), tug_str(tmp));
+			tug_setfield(tres, tug_num((double)i), tug_conststr(tmp));
 		}
 	} else {
 		const char* start = str;
@@ -618,14 +607,14 @@ static void __tuglib_split(tug_Task* T) {
 			part = realloc(part, part_len + 1);
 			memcpy(part, start, part_len);
 			part[part_len] = '\0';
-			tug_setfield(tres, tug_num((double)tug_getlen(tres)), tug_str(part));
+			tug_setfield(tres, tug_num((double)tug_getlen(tres)), tug_conststr((const char*)part));
 
 			start = found + delim_len;
 		}
 		free(part);
 
 		if (*start) {
-			tug_setfield(tres, tug_num((double)tug_getlen(tres)), tug_str(start));
+			tug_setfield(tres, tug_num((double)tug_getlen(tres)), tug_conststr(start));
 		}
 	}
 
@@ -648,35 +637,35 @@ static void tuglib_loadbuiltins(tug_Task* T) {
 	tug_setglobal(T, "clock", tug_cfunc("clock", __tuglib_clock));
 
 	tug_Object* mathlib = tug_table();
-	tug_setfield(mathlib, tug_str("sin"), tug_cfunc("sin", __tuglib_sin));
-	tug_setfield(mathlib, tug_str("cos"), tug_cfunc("cos", __tuglib_cos));
-	tug_setfield(mathlib, tug_str("tan"), tug_cfunc("tan", __tuglib_tan));
-	tug_setfield(mathlib, tug_str("atan2"), tug_cfunc("atan2", __tuglib_atan2));
-	tug_setfield(mathlib, tug_str("asin"), tug_cfunc("asin", __tuglib_asin));
-	tug_setfield(mathlib, tug_str("acos"), tug_cfunc("acos", __tuglib_acos));
-	tug_setfield(mathlib, tug_str("sqrt"), tug_cfunc("sqrt", __tuglib_sqrt));
-	tug_setfield(mathlib, tug_str("pow"), tug_cfunc("pow", __tuglib_pow));
-	tug_setfield(mathlib, tug_str("hypot"), tug_cfunc("hypot", __tuglib_hypot));
-	tug_setfield(mathlib, tug_str("floor"), tug_cfunc("floor", __tuglib_floor));
-	tug_setfield(mathlib, tug_str("ceil"), tug_cfunc("ceil", __tuglib_ceil));
-	tug_setfield(mathlib, tug_str("round"), tug_cfunc("round", __tuglib_round));
-	tug_setfield(mathlib, tug_str("mod"), tug_cfunc("mod", __tuglib_mod));
-	tug_setfield(mathlib, tug_str("abs"), tug_cfunc("abs", __tuglib_abs));
-	tug_setfield(mathlib, tug_str("srand"), tug_cfunc("srand", __tuglib_srand));
-	tug_setfield(mathlib, tug_str("rand"), tug_cfunc("rand", __tuglib_rand));
+	tug_setfield(mathlib, tug_conststr("sin"), tug_cfunc("sin", __tuglib_sin));
+	tug_setfield(mathlib, tug_conststr("cos"), tug_cfunc("cos", __tuglib_cos));
+	tug_setfield(mathlib, tug_conststr("tan"), tug_cfunc("tan", __tuglib_tan));
+	tug_setfield(mathlib, tug_conststr("atan2"), tug_cfunc("atan2", __tuglib_atan2));
+	tug_setfield(mathlib, tug_conststr("asin"), tug_cfunc("asin", __tuglib_asin));
+	tug_setfield(mathlib, tug_conststr("acos"), tug_cfunc("acos", __tuglib_acos));
+	tug_setfield(mathlib, tutug_conststrg_str("sqrt"), tug_cfunc("sqrt", __tuglib_sqrt));
+	tug_setfield(mathlib, tug_conststr("pow"), tug_cfunc("pow", __tuglib_pow));
+	tug_setfield(mathlib, tug_conststr("hypot"), tug_cfunc("hypot", __tuglib_hypot));
+	tug_setfield(mathlib, tug_conststr("floor"), tug_cfunc("floor", __tuglib_floor));
+	tug_setfield(mathlib, tug_conststr("ceil"), tug_cfunc("ceil", __tuglib_ceil));
+	tug_setfield(mathlib, tug_conststr("round"), tug_cfunc("round", __tuglib_round));
+	tug_setfield(mathlib, tug_conststr("mod"), tug_cfunc("mod", __tuglib_mod));
+	tug_setfield(mathlib, tug_conststr("abs"), tug_cfunc("abs", __tuglib_abs));
+	tug_setfield(mathlib, tug_conststr("srand"), tug_cfunc("srand", __tuglib_srand));
+	tug_setfield(mathlib, tug_conststr("rand"), tug_cfunc("rand", __tuglib_rand));
 	tug_setglobal(T, "math", mathlib);
 	
 	tug_Object* strlib = tug_table();
-	tug_setfield(strlib, tug_str("sub"), tug_cfunc("sub", __tuglib_sub));
-	tug_setfield(strlib, tug_str("concat"), tug_cfunc("concat", __tuglib_concat));
-	tug_setfield(strlib, tug_str("trim"), tug_cfunc("trim", __tuglib_trim));
-	tug_setfield(strlib, tug_str("ltrim"), tug_cfunc("ltrim", __tuglib_ltrim));
-	tug_setfield(strlib, tug_str("rtrim"), tug_cfunc("rtrim", __tuglib_rtrim));
-	tug_setfield(strlib, tug_str("upper"), tug_cfunc("upper", __tuglib_upper));
-	tug_setfield(strlib, tug_str("lower"), tug_cfunc("lower", __tuglib_lower));
-	tug_setfield(strlib, tug_str("reverse"), tug_cfunc("reverse", __tuglib_reverse));
-	tug_setfield(strlib, tug_str("repeat"), tug_cfunc("repeat", __tuglib_repeat));
-	tug_setfield(strlib, tug_str("split"), tug_cfunc("split", __tuglib_split));
+	tug_setfield(strlib, tug_conststr("sub"), tug_cfunc("sub", __tuglib_sub));
+	tug_setfield(strlib, tug_conststr("concat"), tug_cfunc("concat", __tuglib_concat));
+	tug_setfield(strlib, tug_conststr("trim"), tug_cfunc("trim", __tuglib_trim));
+	tug_setfield(strlib, tug_conststr("ltrim"), tug_cfunc("ltrim", __tuglib_ltrim));
+	tug_setfield(strlib, tug_conststr("rtrim"), tug_cfunc("rtrim", __tuglib_rtrim));
+	tug_setfield(strlib, tug_conststr("upper"), tug_cfunc("upper", __tuglib_upper));
+	tug_setfield(strlib, tug_conststr("lower"), tug_cfunc("lower", __tuglib_lower));
+	tug_setfield(strlib, tug_conststr("reverse"), tug_cfunc("reverse", __tuglib_reverse));
+	tug_setfield(strlib, tug_conststr("repeat"), tug_cfunc("repeat", __tuglib_repeat));
+	tug_setfield(strlib, tug_conststr("split"), tug_cfunc("split", __tuglib_split));
 	tug_setglobal(T, "str", strlib);
 	
 	
