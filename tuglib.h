@@ -643,7 +643,7 @@ static void tuglib_loadbuiltins(tug_Task* T) {
 	tug_setfield(mathlib, tug_conststr("atan2"), tug_cfunc("atan2", __tuglib_atan2));
 	tug_setfield(mathlib, tug_conststr("asin"), tug_cfunc("asin", __tuglib_asin));
 	tug_setfield(mathlib, tug_conststr("acos"), tug_cfunc("acos", __tuglib_acos));
-	tug_setfield(mathlib, tutug_conststrg_str("sqrt"), tug_cfunc("sqrt", __tuglib_sqrt));
+	tug_setfield(mathlib, tug_conststr("sqrt"), tug_cfunc("sqrt", __tuglib_sqrt));
 	tug_setfield(mathlib, tug_conststr("pow"), tug_cfunc("pow", __tuglib_pow));
 	tug_setfield(mathlib, tug_conststr("hypot"), tug_cfunc("hypot", __tuglib_hypot));
 	tug_setfield(mathlib, tug_conststr("floor"), tug_cfunc("floor", __tuglib_floor));

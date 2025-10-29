@@ -1,6 +1,5 @@
 l := [1,2,3]
+l[99] = 69
 for i in l do
 	print(i)
 end
-
-print(l[2])

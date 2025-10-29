@@ -3798,7 +3798,7 @@ static void task_exec(Task* task) {
 					} else if (obj->kind == TABLE) {
 						table_set(obj->table, new_str(lastname), fobj);
 					} else {
-						assign_err(task, "unable to set index '%s'", obj_type(obj));
+						assign_err(task, "unable to set function to field '%s'", obj_type(obj));
 					}
 				} else vec_push(task->stack, fobj);
 				vec_free(params);
@@ -3849,30 +3849,43 @@ static void task_exec(Task* task) {
 				Object* key = pop_value(task);
 				Object* obj = pop_value(task);
 
-				if (obj->kind != TABLE) {
+				if (obj->kind == TABLE) {
+					Table* table = obj->table;
+					int meta = 0;
+					if (obj->metatable != obj_nil) {
+						Table* mtable = obj->metatable->table;
+						Object* func = table_get(mtable, tug_conststr("__set"));
+
+						if (func != obj_nil) {
+							Vector* args = vec_serve(3);
+							vec_push(args, obj);
+							vec_push(args, key);
+							vec_push(args, value);
+
+							call_fobj(func, args);
+							pop_value(task);
+							meta = 1;
+						}
+					}
+
+					if (!meta) table_set(table, key, value);
+				} else if (obj->kind == LIST) {
+					Vector* lvec = obj->list;
+					if (key->kind != NUM) {
+						assign_err(task, "unable to set list index with '%s'", obj_type(key));
+						break;
+					}
+
+					long idx = (long)key->num;
+					if (idx < 0 || idx >= vec_count(lvec)) {
+						assign_err(task, "set index out of range");
+						break;
+					}
+					lvec->array[idx] = value;
+				} else {
 					assign_err(task, "unable to set index '%s'", obj_type(obj));
 					break;
 				}
-
-				Table* table = obj->table;
-				int meta = 0;
-				if (obj->metatable != obj_nil) {
-					Table* mtable = obj->metatable->table;
-					Object* func = table_get(mtable, tug_conststr("__set"));
-
-					if (func != obj_nil) {
-						Vector* args = vec_serve(3);
-						vec_push(args, obj);
-						vec_push(args, key);
-						vec_push(args, value);
-
-						call_fobj(func, args);
-						pop_value(task);
-						meta = 1;
-					}
-				}
-
-				if (!meta) table_set(table, key, value);
 
 				if (push) push_obj(task, obj);
 			} break;
@@ -3996,6 +4009,18 @@ static void task_exec(Task* task) {
 								}
 
 								if (!meta) table_set(obj->table, key, value);
+							} else if (obj->kind == LIST) {
+								Vector* lvec = obj->list;
+								if (key->kind != NUM) {
+									assign_err(task, "unable to set list index with '%s'", obj_type(key));
+									err = 1;
+								} else {
+									long idx = (long)key->num;
+									if (idx < 0 || idx >= vec_count(lvec)) {
+										assign_err(task, "set index out of range");
+										err = 1;
+									} else lvec->array[idx] = value;
+								}
 							} else {
 								assign_err(task, "unable to set index '%s'", obj_type(obj));
 								err = 1;
