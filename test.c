@@ -1,11 +1,14 @@
+#include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
-void a(int i) {
-	char str[i];
-	
-	printf("%zu\n", sizeof(str));
-}
+int main() {
+	const char* text = "hello";
+	size_t len = strlen(text) + 1;
+	char* clone = malloc(len);
+	char* res = memcpy(clone, text, len);
+	printf("%p %p\n", clone, res);
+	free(clone);
 
-int main(int argc, char *argv[]) {
-	a(5);
+	return 0;
 }

@@ -3349,7 +3349,7 @@ void call_obj(Task* task, Object* obj, Vector* args, int f, int protected) {
 	if (obj->kind == TABLE && obj->metatable != obj_nil) {
 		Table* mtable = obj->metatable->table;
 		vec_pushfirst(args, obj);
-		Object* func = table_get(mtable, new_str(gc_strdup("__call")));
+		Object* func = table_get(mtable, tug_conststr("__call"));
 		if (func != obj_nil) obj = func;
 		if (obj->kind != FUNC) {
 			if (f) vec_free(args);
@@ -3466,7 +3466,7 @@ static void task_exec(Task* task) {
 						case OP_NE: method_name = "__ne"; break;
 					}
 
-					Object* func = table_get(mtable, new_str(gc_strdup(method_name)));
+					Object* func = table_get(mtable, tug_conststr(method_name));
 					if (func != obj_nil) {
 						Vector* args = vec_serve(2);
 						vec_push(args, o1);
@@ -3666,9 +3666,9 @@ static void task_exec(Task* task) {
 				if (obj->kind == TABLE && obj->metatable != obj_nil) {
 					Table* mtable = obj->metatable->table;
 					Object* func;
-					if (op == OP_NOT) func = table_get(mtable, new_str(gc_strdup("__truth")));
-					else if (op == OP_POS) func = table_get(mtable, new_str(gc_strdup("__pos")));
-					else func = table_get(mtable, new_str(gc_strdup("__neg")));
+					if (op == OP_NOT) func = table_get(mtable, tug_conststr("__truth"));
+					else if (op == OP_POS) func = table_get(mtable, tug_conststr("__pos"));
+					else func = table_get(mtable, tug_conststr("__neg"));
 
 					if (func != obj_nil) {
 						Vector* args = vec_serve(1);
@@ -3750,7 +3750,7 @@ static void task_exec(Task* task) {
 								if (mmethod != obj_nil) {
 									Vector* args = vec_serve(2);
 									vec_push(args, obj);
-									vec_push(args, new_str(gc_strdup(part)));
+									vec_push(args, tug_conststr(part));
 
 									call_fobj(mmethod, args);
 									Object* ret = pop_tvalue(task);
@@ -3759,7 +3759,7 @@ static void task_exec(Task* task) {
 									}
 									obj = ret;
 								} else if (obj->kind == TABLE) {
-									obj = table_get(obj->table, new_str(gc_strdup(part)));
+									obj = table_get(obj->table, tug_conststr(part));
 								} else {
 									assign_err(task, "unable to get index '%s'", obj_type(obj));
 									gc_free(name);
@@ -3855,7 +3855,7 @@ static void task_exec(Task* task) {
 				int meta = 0;
 				if (obj->metatable != obj_nil) {
 					Table* mtable = obj->metatable->table;
-					Object* func = table_get(mtable, new_str(gc_strdup("__set")));
+					Object* func = table_get(mtable, tug_conststr("__set"));
 
 					if (func != obj_nil) {
 						Vector* args = vec_serve(3);
@@ -3885,7 +3885,7 @@ static void task_exec(Task* task) {
 
 					if (obj->metatable != obj_nil) {
 						Table* mtable = obj->metatable->table;
-						Object* func = table_get(mtable, new_str(gc_strdup("__get")));
+						Object* func = table_get(mtable, tug_conststr("__get"));
 
 						if (func != obj_nil) {
 							Vector* args = vec_serve(3);
@@ -3977,7 +3977,7 @@ static void task_exec(Task* task) {
 								int meta = 0;
 								if (obj->metatable != obj_nil) {
 									Table* mtable = obj->metatable->table;
-									Object* func = table_get(mtable, new_str(gc_strdup("__set")));
+									Object* func = table_get(mtable, tug_conststr("__set"));
 
 									if (func != obj_nil) {
 										Vector* args = vec_serve(3);
@@ -4016,7 +4016,7 @@ static void task_exec(Task* task) {
 				int meta = 0;
 				if (obj->kind == TABLE && obj->metatable != obj_nil) {
 					Table* mtable = obj->metatable->table;
-					Object* func = table_get(mtable, new_str(gc_strdup("__iter")));
+					Object* func = table_get(mtable, tug_conststr("__iter"));
 
 					if (func != obj_nil) {
 						Vector* args = vec_serve(1);
@@ -4261,24 +4261,18 @@ static void* gc_malloc(size_t size) {
 static void* gc_realloc(void* ptr, size_t new_size) {
 	if (!ptr) return gc_malloc(new_size);
 
-	GCHeader* old_header = ((GCHeader*)ptr) - 1;
-	size_t old_size = old_header->size;
-
-	GCHeader* new_header = realloc(old_header, sizeof(GCHeader) + new_size);
-	if (!new_header) return NULL;
-
-	new_header->size = new_size;
+	GCHeader* header = ((GCHeader*)ptr) - 1;
+	size_t old_size = header->size;
+	header = realloc(header, sizeof(GCHeader) + new_size);
+	header->size = new_size;
 	gc_size += new_size - old_size;
 
-	return (void*)(new_header + 1);
+	return (void*)(header + 1);
 }
 
 static void* gc_calloc(size_t nmemb, size_t size) {
 	size_t total = nmemb * size;
-	void* ptr = gc_malloc(total);
-	if (ptr) memset(ptr, 0, total);
-
-	return ptr;
+	return memset(gc_malloc(total), 0, total);
 }
 
 static void gc_free(void* ptr) {
@@ -4290,10 +4284,7 @@ static void gc_free(void* ptr) {
 
 static char* gc_strdup(const char* str) {
 	size_t len = strlen(str) + 1;
-	char* new_str = gc_malloc(len);
-	memcpy(new_str, str, len);
-
-	return new_str;
+	return memcpy(gc_malloc(len), str, strlen(str) + 1);
 }
 
 static inline void gc_collect_obj(Object* obj) {
