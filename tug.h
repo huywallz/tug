@@ -40,6 +40,16 @@ tug_Object* tug_table(void);
 typedef void(*tug_CFunc)(tug_Task*);
 tug_Object* tug_cfunc(const char* name, tug_CFunc func);
 
+tug_Object* tug_tuple(void);
+void tug_tuplepush(tug_Object* tuple, tug_Object* obj);
+tug_Object* tug_tuplepop(tug_Object* tuple);
+
+tug_Object* tug_list(void);
+void tug_listpush(tug_Object* list, tug_Object* obj);
+tug_Object* tug_listpop(tug_Object* list, size_t idx);
+void tug_listinsert(tug_Object* list, size_t idx, tug_Object* obj);
+int tug_listset(tug_Object* list, size_t idx, tug_Object* obj);
+
 unsigned long tug_getid(tug_Object* obj);
 tug_Type tug_gettype(tug_Object* obj);
 
@@ -50,10 +60,6 @@ tug_Object* tug_getfield(tug_Object* obj, tug_Object* key);
 size_t tug_getlen(tug_Object* obj);
 void tug_setmetatable(tug_Object* obj, tug_Object* metatable);
 tug_Object* tug_getmetatable(tug_Object* obj);
-
-tug_Object* tug_tuple(void);
-void tug_tuplepush(tug_Object* tuple, tug_Object* obj);
-tug_Object* tug_tuplepop(tug_Object* tuple);
 
 void tug_setvar(tug_Task* T, const char* name, tug_Object* value);
 tug_Object* tug_getvar(tug_Task* T, const char* name);

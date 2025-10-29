@@ -395,12 +395,18 @@ static Vector* vec_create() {
 	return vec_serve(64);
 }
 
-static void vec_push(Vector* vec, void* obj) {
+static void vec_dynamic(Vector* vec) {
 	if (vec->count >= vec->capacity) {
 		vec->capacity *= 2;
 		vec->array = gc_realloc(vec->array, vec->capacity * sizeof(void*));
+	} else if (vec->count < vec->capacity / 4 && vec->capacity > 8) {
+		vec->capacity /= 2;
+		vec->array = gc_realloc(vec->array, vec->capacity * sizeof(void*));
 	}
+}
 
+static void vec_push(Vector* vec, void* obj) {
+	vec_dynamic(vec);
 	vec->array[vec->count++] = obj;
 }
 
@@ -418,11 +424,8 @@ static void vec_pushfirst(Vector* vec, void* obj) {
 static void* vec_pop(Vector* vec) {
 	if (vec->count == 0) return NULL;
 	void* res = vec->array[--vec->count];
+	vec_dynamic(vec);
 
-	if (vec->count < vec->capacity / 4 && vec->capacity > 8) {
-		vec->capacity /= 2;
-		vec->array = gc_realloc(vec->array, vec->capacity * sizeof(void*));
-	}
 	return res;
 }
 
@@ -4489,6 +4492,50 @@ tug_Object* tug_tuplepop(tug_Object* tuple) {
 	tug_Object* obj = vec_pop(tuple->tuple);
 
 	return obj ? obj : obj_nil;
+}
+
+tug_Object* tug_list(void) {
+	Object* obj = gc_obj(obj_create(LIST));
+	obj->list = vec_create();
+
+	return obj;
+}
+
+void tug_listpush(tug_Object* list, tug_Object* obj) {
+	vec_push(list->list, obj);
+}
+
+tug_Object* tug_listpop(tug_Object* list, size_t idx) {
+	Vector* lvec = list->list;
+	if (idx >= lvec->count) return obj_nil;
+	if (lvec->count == 0) return obj_nil;
+	
+	Object* obj = lvec->array[idx];
+	memmove(&lvec->array[idx], &lvec->array[idx + 1], (lvec->count - idx - 1) * sizeof(void*));
+	lvec->count--;
+	vec_dynamic(lvec);
+	return obj;
+}
+
+void tug_listinsert(tug_Object* list, size_t idx, tug_Object* obj) {
+	Vector* lvec = list->list;
+	if (idx > lvec->count) {
+		vec_push(lvec, obj);
+		return;
+	}
+	
+	vec_dynamic(lvec);
+	memmove(&lvec->array[idx + 1], &lvec->array[idx], (lvec->count - idx) * sizeof(void*));
+	lvec->array[idx] = obj;
+	lvec->count++;
+	return;
+}
+
+int tug_listset(tug_Object* list, size_t idx, tug_Object* obj) {
+	Vector* lvec = list->list;
+	if (idx >= lvec->count) return 0;
+	lvec->array[idx] = obj;
+	return 1;
 }
 
 unsigned long tug_getid(tug_Object* obj) {
