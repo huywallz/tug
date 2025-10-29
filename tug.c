@@ -3893,14 +3893,33 @@ static void task_exec(Task* task) {
 					if (!meta) push_obj(task, table_get(table, key));
 				} else if (obj->kind == STR && key->kind == NUM) {
 					long idx = (long)key->num;
-					idx = idx < 0 ? 0 : idx;
+					if (idx < 0) {
+						push_obj(task, obj_nil);
+						break;
+					}
 					size_t len = strlen(obj->str);
-					idx = idx > len ? len : idx;
+					if (idx > len) {
+						push_obj(task, obj_nil);
+						break;
+					}
 					
 					char res[2];
 					res[0] = obj->str[idx];
 					res[1] = '\0';
 					push_obj(task, tug_str(res));
+				} else if (obj->kind == LIST && key->kind == NUM) {
+					long idx = (long)key->num;
+					if (idx < 0) {
+						push_obj(task, obj_nil);
+						break;
+					}
+					size_t len = obj->list->count;
+					if (idx > len) {
+						push_obj(task, obj_nil);
+						break;
+					}
+					
+					push_obj(task, vec_get(obj->list, idx));
 				} else {
 					assign_err(task, "unable to get index '%s' with '%s'", obj_type(obj), obj_type(key));
 				}
