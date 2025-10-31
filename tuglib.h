@@ -350,83 +350,168 @@ static void __tuglib_clock(tug_Task* T) {
 	tug_ret(T, tug_num((double)clock() / CLOCKS_PER_SEC));
 }
 
+static void __tuglib_min(tug_Task* T) {
+	double lowest = 0.0;
+	int first = 1;
+	size_t argc = tug_getargc(T);
+	for (size_t i = 0; i < argc; i++) {
+		double num = tuglib_checknum(T, i);
+		if (first) {
+			lowest = num;
+			first = 0;
+		} else if (num < lowest) {
+			lowest = num;
+		}
+	}
+
+	tug_ret(T, tug_num(lowest));
+}
+
+static void __tuglib_max(tug_Task* T) {
+	double highest = 0.0;
+	int first = 1;
+	size_t argc = tug_getargc(T);
+	for (size_t i = 0; i < argc; i++) {
+		double num = tuglib_checknum(T, i);
+		if (first) {
+			highest = num;
+			first = 0;
+		} else if (num > highest) {
+			highest = num;
+		}
+	}
+
+	tug_ret(T, tug_num(highest));
+}
+
+#define __tuglib_pi (double)(3.1415926535897932384626433832795028841971693993751058209749445923078164062)
+#define __tuglib_e (double)(2.718281828459045235360287471352662497757247093699959574966967)
+#define __tuglib_tau (double)(6.2831853071795864769252867665590057683943387987502116419498891846156328124)
+#define __tuglib_inf (HUGE_VAL)
+#define __tuglib_nan (NAN)
+
+static void __tuglib_deg(tug_Task* T) {
+	tug_ret(T, tug_num(tuglib_checknum(T, 0) * 180.0 / __tuglib_pi));
+}
+
+static void __tuglib_rad(tug_Task* T) {
+	tug_ret(T, tug_num(tuglib_checknum(T, 0) * __tuglib_pi / 180.0));
+}
+
+static void __tuglib_log(tug_Task* T) {
+	tug_ret(T, tug_num(log(tuglib_checknum(T, 0))));
+}
+
+static void __tuglib_log10(tug_Task* T) {
+	tug_ret(T, tug_num(log10(tuglib_checknum(T, 0))));
+}
+
+static void __tuglib_cbrt(tug_Task* T) {
+	tug_ret(T, tug_num(cbrt(tuglib_checknum(T, 0))));
+}
+
+static void __tuglib_cosh(tug_Task* T) {
+	tug_ret(T, tug_num(cosh(tuglib_checknum(T, 0))));
+}
+
+static void __tuglib_atanh(tug_Task* T) {
+	tug_ret(T, tug_num(atanh(tuglib_checknum(T, 0))));
+}
+
+static void __tuglib_asinh(tug_Task* T) {
+	tug_ret(T, tug_num(asinh(tuglib_checknum(T, 0))));
+}
+
+static void __tuglib_acosh(tug_Task* T) {
+	tug_ret(T, tug_num(acosh(tuglib_checknum(T, 0))));
+}
+
+static void __tuglib_frexp(tug_Task* T) {
+	int exp;
+	double val = frexp(tuglib_checknum(T, 0), &exp);
+	tug_rets(T, 2, tug_num(val), tug_num((double)exp));
+}
+
+static void __tuglib_trunc(tug_Task* T) {
+	tug_ret(T, tug_num(trunc(tuglib_checknum(T, 0))));
+}
+
+static void __tuglib_ldexp(tug_Task* T) {
+	double val = tuglib_checknum(T, 0);
+	int exp = tuglib_checkint(T, 1);
+	tug_ret(T, tug_num(ldexp(val, exp)));
+}
+
+static void __tuglib_tanh(tug_Task* T) {
+	tug_ret(T, tug_num(tanh(tuglib_checknum(T, 0))));
+}
+
+static void __tuglib_sinh(tug_Task* T) {
+	tug_ret(T, tug_num(sinh(tuglib_checknum(T, 0))));
+}
+
+static void __tuglib_exp(tug_Task* T) {
+	tug_ret(T, tug_num(exp(tuglib_checknum(T, 0))));
+}
+
 static void __tuglib_sin(tug_Task* T) {
-	double x = tuglib_checknum(T, 0);
-	tug_ret(T, tug_num(sin(x)));
+	tug_ret(T, tug_num(sin(tuglib_checknum(T, 0))));
 }
 
 static void __tuglib_cos(tug_Task* T) {
-	double x = tuglib_checknum(T, 0);
-	tug_ret(T, tug_num(cos(x)));
+	tug_ret(T, tug_num(cos(tuglib_checknum(T, 0))));
 }
 
 static void __tuglib_tan(tug_Task* T) {
-	double x = tuglib_checknum(T, 0);
-	tug_ret(T, tug_num(tan(x)));
+	tug_ret(T, tug_num(tan(tuglib_checknum(T, 0))));
 }
 
 static void __tuglib_atan2(tug_Task* T) {
-	double y = tuglib_checknum(T, 0);
-	double x = tuglib_checknum(T, 1);
-	tug_ret(T, tug_num(atan2(y, x)));
+	tug_ret(T, tug_num(atan2(tuglib_checknum(T, 0), tuglib_checknum(T, 1))));
 }
 
 static void __tuglib_asin(tug_Task* T) {
-	double x = tuglib_checknum(T, 0);
-	tug_ret(T, tug_num(asin(x)));
+	tug_ret(T, tug_num(asin(tuglib_checknum(T, 0))));
 }
 
 static void __tuglib_acos(tug_Task* T) {
-	double x = tuglib_checknum(T, 0);
-	tug_ret(T, tug_num(acos(x)));
+	tug_ret(T, tug_num(acos(tuglib_checknum(T, 0))));
 }
 
 static void __tuglib_sqrt(tug_Task* T) {
-	double x = tuglib_checknum(T, 0);
-	tug_ret(T, tug_num(sqrt(x)));
+	tug_ret(T, tug_num(sqrt(tuglib_checknum(T, 0))));
 }
 
 static void __tuglib_pow(tug_Task* T) {
-	double x = tuglib_checknum(T, 0);
-	double y = tuglib_checknum(T, 1);
-	tug_ret(T, tug_num(pow(x, y)));
+	tug_ret(T, tug_num(pow(tuglib_checknum(T, 0), tuglib_checknum(T, 1))));
 }
 
 static void __tuglib_hypot(tug_Task* T) {
-	double x = tuglib_checknum(T, 0);
-	double y = tuglib_checknum(T, 1);
-	tug_ret(T, tug_num(hypot(x, y)));
+	tug_ret(T, tug_num(hypot(tuglib_checknum(T, 0), tuglib_checknum(T, 1))));
 }
 
 static void __tuglib_floor(tug_Task* T) {
-	double x = tuglib_checknum(T, 0);
-	tug_ret(T, tug_num(floor(x)));
+	tug_ret(T, tug_num(floor(tuglib_checknum(T, 0))));
 }
 
 static void __tuglib_ceil(tug_Task* T) {
-	double x = tuglib_checknum(T, 0);
-	tug_ret(T, tug_num(ceil(x)));
+	tug_ret(T, tug_num(ceil(tuglib_checknum(T, 0))));
 }
 
 static void __tuglib_round(tug_Task* T) {
-	double x = tuglib_checknum(T, 0);
-	tug_ret(T, tug_num(round(x)));
+	tug_ret(T, tug_num(round(tuglib_checknum(T, 0))));
 }
 
 static void __tuglib_mod(tug_Task* T) {
-	double x = tuglib_checknum(T, 0);
-	double y = tuglib_checknum(T, 1);
-	tug_ret(T, tug_num(fmod(x, y)));
+	tug_ret(T, tug_num(fmod(tuglib_checknum(T, 0), tuglib_checknum(T, 1))));
 }
 
 static void __tuglib_abs(tug_Task* T) {
-	double x = tuglib_checknum(T, 0);
-	tug_ret(T, tug_num(fabs(x)));
+	tug_ret(T, tug_num(fabs(tuglib_checknum(T, 0))));
 }
 
 static void __tuglib_seed(tug_Task* T) {
-	int seed = tuglib_checkint(T, 0);
-	srand(seed);
+	srand(tuglib_checkint(T, 0));
 }
 
 static void __tuglib_rand(tug_Task* T) {
@@ -718,6 +803,27 @@ static void tuglib_loadbuiltins(tug_Task* T) {
 	tug_setfield(mathlib, tug_conststr("abs"), tug_cfunc("abs", __tuglib_abs));
 	tug_setfield(mathlib, tug_conststr("seed"), tug_cfunc("seed", __tuglib_seed));
 	tug_setfield(mathlib, tug_conststr("rand"), tug_cfunc("rand", __tuglib_rand));
+	tug_setfield(mathlib, tug_conststr("pi"), tug_num(__tuglib_pi));
+	tug_setfield(mathlib, tug_conststr("e"), tug_num(__tuglib_e));
+	tug_setfield(mathlib, tug_conststr("deg"), tug_cfunc("deg", __tuglib_deg));
+	tug_setfield(mathlib, tug_conststr("rad"), tug_cfunc("rad", __tuglib_rad));
+	tug_setfield(mathlib, tug_conststr("log"), tug_cfunc("log", __tuglib_log));
+	tug_setfield(mathlib, tug_conststr("log10"), tug_cfunc("log10", __tuglib_log10));
+	tug_setfield(mathlib, tug_conststr("cbrt"), tug_cfunc("cbrt", __tuglib_cbrt));
+	tug_setfield(mathlib, tug_conststr("cosh"), tug_cfunc("cosh", __tuglib_cosh));
+	tug_setfield(mathlib, tug_conststr("sinh"), tug_cfunc("sinh", __tuglib_sinh));
+	tug_setfield(mathlib, tug_conststr("exp"), tug_cfunc("exp", __tuglib_exp));
+	tug_setfield(mathlib, tug_conststr("tanh"), tug_cfunc("tanh", __tuglib_tanh));
+	tug_setfield(mathlib, tug_conststr("acosh"), tug_cfunc("acosh", __tuglib_acosh));
+	tug_setfield(mathlib, tug_conststr("asinh"), tug_cfunc("asinh", __tuglib_asinh));
+	tug_setfield(mathlib, tug_conststr("atanh"), tug_cfunc("atanh", __tuglib_atanh));
+	tug_setfield(mathlib, tug_conststr("frexp"), tug_cfunc("frexp", __tuglib_frexp));
+	tug_setfield(mathlib, tug_conststr("ldexp"), tug_cfunc("ldexp", __tuglib_ldexp));
+	tug_setfield(mathlib, tug_conststr("min"), tug_cfunc("min", __tuglib_min));
+	tug_setfield(mathlib, tug_conststr("max"), tug_cfunc("max", __tuglib_max));
+	tug_setfield(mathlib, tug_conststr("inf"), tug_num(__tuglib_inf));
+	tug_setfield(mathlib, tug_conststr("tau"), tug_num(__tuglib_tau));
+	tug_setfield(mathlib, tug_conststr("nan"), tug_num(__tuglib_nan));
 	tug_setglobal(T, "math", mathlib);
 	
 	tug_Object* strlib = tug_table();
