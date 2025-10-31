@@ -4563,6 +4563,12 @@ int tug_listset(tug_Object* list, size_t idx, tug_Object* obj) {
 	return 1;
 }
 
+tug_Object* tug_listget(tug_Object* list, size_t idx) {
+	Vector* lvec = list->list;
+	if (idx >= lvec->count) return obj_nil;
+	return lvec->array[idx];
+}
+
 void tug_listclear(tug_Object* list) {
 	list->list->count = 0;
 }

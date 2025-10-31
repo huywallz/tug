@@ -771,6 +771,17 @@ static void __tuglib_clear(tug_Task* T) {
 	tug_listclear(tuglib_checklist(T, 0));
 }
 
+static void __tuglib_unpack(tug_Task* T) {
+	tug_Object* list = tuglib_checklist(T, 0);
+	size_t len = tug_getlen(list);
+	tug_Object* tuple = tug_tuple();
+	for (size_t i = 0; i < len; i++) {
+		tug_tuplepush(tuple, tug_listget(list, i));
+	}
+
+	tug_ret(T, tuple);
+}
+
 static void tuglib_loadbuiltins(tug_Task* T) {
 	tug_setglobal(T, "print", tug_cfunc("print", __tuglib_print));
 	tug_setglobal(T, "tostr", tug_cfunc("tostr", __tuglib_tostr));
@@ -844,6 +855,7 @@ static void tuglib_loadbuiltins(tug_Task* T) {
 	tug_setfield(listlib, tug_conststr("pop"), tug_cfunc("pop", __tuglib_pop));
 	tug_setfield(listlib, tug_conststr("insert"), tug_cfunc("insert", __tuglib_insert));
 	tug_setfield(listlib, tug_conststr("clear"), tug_cfunc("clear", __tuglib_clear));
+	tug_setfield(listlib, tug_conststr("unpack"), tug_cfunc("unpack", __tuglib_unpack));
 	tug_setglobal(T, "list", listlib);
 }
 

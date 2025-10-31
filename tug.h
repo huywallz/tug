@@ -48,6 +48,7 @@ tug_Object* tug_list(void);
 void tug_listpush(tug_Object* list, tug_Object* obj);
 tug_Object* tug_listpop(tug_Object* list, size_t idx);
 void tug_listinsert(tug_Object* list, size_t idx, tug_Object* obj);
+tug_Object* tug_listget(tug_Object* list, size_t idx);
 int tug_listset(tug_Object* list, size_t idx, tug_Object* obj);
 void tug_listclear(tug_Object* list);
 
