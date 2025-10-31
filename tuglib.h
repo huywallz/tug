@@ -733,7 +733,12 @@ static void tuglib_loadbuiltins(tug_Task* T) {
 	tug_setfield(strlib, tug_conststr("replace"), tug_cfunc("replace", __tuglib_str_replace));
 	tug_setglobal(T, "str", strlib);
 	
-	
+	tug_Object* listlib = tug_table();
+	tug_setfield(listlib, tug_conststr("push"), tug_cfunc("push", __tuglib_push));
+	tug_setfield(listlib, tug_conststr("pop"), tug_cfunc("pop", __tuglib_pop));
+	tug_setfield(listlib, tug_conststr("insert"), tug_cfunc("insert", __tuglib_insert));
+	tug_setfield(listlib, tug_conststr("clear"), tug_cfunc("clear", __tuglib_clear));
+	tug_setglobal(T, "list", listlib);
 }
 
 static void tuglib_loadlibs(tug_Task* T) {

@@ -1,0 +1,11 @@
+mylist := []
+list.push(mylist, 123)
+list.push(mylist, "hello, world")
+list.push(mylist, {})
+
+for v in mylist do
+	print(v)
+end
+
+print(mylist[0])
+print(list.pop(mylist))
