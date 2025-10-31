@@ -424,7 +424,7 @@ static void __tuglib_abs(tug_Task* T) {
 	tug_ret(T, tug_num(fabs(x)));
 }
 
-static void __tuglib_srand(tug_Task* T) {
+static void __tuglib_seed(tug_Task* T) {
 	int seed = tuglib_checkint(T, 0);
 	srand(seed);
 }
@@ -499,31 +499,6 @@ static void __tuglib_trim(tug_Task* T) {
 	char* res = malloc(newlen + 1);
 	memcpy(res, str + start, newlen);
 	res[newlen] = '\0';
-
-	tug_ret(T, tug_str(res));
-}
-
-static void __tuglib_ltrim(tug_Task* T) {
-	const char* str = tuglib_checkstr(T, 0);
-	size_t len = strlen(str);
-
-	size_t start = 0;
-	while (start < len && isspace((unsigned char)str[start])) start++;
-
-	char* res = malloc(strlen(str + start) + 1);
-	strcpy(res, str + start);
-
-	tug_ret(T, tug_str(res));
-}
-
-static void __tuglib_rtrim(tug_Task* T) {
-	const char* str = tuglib_checkstr(T, 0);
-	size_t len = strlen(str);
-	while (len > 0 && isspace((unsigned char)str[len - 1])) len--;
-
-	char* res = malloc(len + 1);
-	memcpy(res, str, len);
-	res[len] = '\0';
 
 	tug_ret(T, tug_str(res));
 }
@@ -624,6 +599,63 @@ static void __tuglib_split(tug_Task* T) {
 	tug_ret(T, res);
 }
 
+static void __tuglib_str_find(tug_Task* T) {
+	const char* str = tuglib_checkstr(T, 0);
+	const char* sub = tuglib_checkstr(T, 1);
+	const char* pos = strstr(str, sub);
+
+	if (pos) {
+		tug_ret(T, tug_num((double)(pos - str)));
+	}
+}
+
+static void __tuglib_str_replace(tug_Task* T) {
+	const char* str = tuglib_checkstr(T, 0);
+	const char* old = tuglib_checkstr(T, 1);
+	const char* new = tuglib_checkstr(T, 2);
+	long count = tuglib_optlong(T, 3, 0);
+
+	if (!*old) {
+		tug_ret(T, tug_conststr(str));
+		return;
+	}
+
+	size_t old_len = strlen(old);
+	size_t new_len = strlen(new);
+
+	const char* src = str;
+	size_t total_reps = 0;
+
+	const char* tmp = str;
+	while ((tmp = strstr(tmp, old))) {
+		total_reps++;
+		tmp += old_len;
+	}
+	
+	if (count > 0 && (size_t)count < total_reps) {
+		total_reps = count;
+	}
+
+	size_t new_size = strlen(str) + (new_len - old_len) * total_reps + 1;
+	char* res = malloc(new_size);
+	char* out = res;
+
+	int done = 0;
+	while (*str) {
+		if ((count <= 0 || done < count) && strncmp(str, old, old_len) == 0) {
+			memcpy(out, new, new_len);
+			out += new_len;
+			str += old_len;
+			done++;
+		} else {
+			*out++ = *str++;
+		}
+	}
+	*out = '\0';
+
+	tug_ret(T, tug_str(res));
+}
+
 static void __tuglib_push(tug_Task* T) {
 	tug_Object* list = tuglib_checklist(T, 0);
 	tug_Object* obj = tuglib_checkany(T, 1);
@@ -637,7 +669,7 @@ static void __tuglib_pop(tug_Task* T) {
 	long idx = tuglib_optlong(T, 1, len - 1);
 	if (idx < 0 || idx >= len) tug_err(T, "pop index out of range");
 
-	Object* pop = tug_listpop(list, idx);
+	tug_Object* pop = tug_listpop(list, idx);
 	tug_ret(T, pop);
 }
 
@@ -684,7 +716,7 @@ static void tuglib_loadbuiltins(tug_Task* T) {
 	tug_setfield(mathlib, tug_conststr("round"), tug_cfunc("round", __tuglib_round));
 	tug_setfield(mathlib, tug_conststr("mod"), tug_cfunc("mod", __tuglib_mod));
 	tug_setfield(mathlib, tug_conststr("abs"), tug_cfunc("abs", __tuglib_abs));
-	tug_setfield(mathlib, tug_conststr("srand"), tug_cfunc("srand", __tuglib_srand));
+	tug_setfield(mathlib, tug_conststr("seed"), tug_cfunc("seed", __tuglib_seed));
 	tug_setfield(mathlib, tug_conststr("rand"), tug_cfunc("rand", __tuglib_rand));
 	tug_setglobal(T, "math", mathlib);
 	
@@ -692,13 +724,13 @@ static void tuglib_loadbuiltins(tug_Task* T) {
 	tug_setfield(strlib, tug_conststr("sub"), tug_cfunc("sub", __tuglib_sub));
 	tug_setfield(strlib, tug_conststr("concat"), tug_cfunc("concat", __tuglib_concat));
 	tug_setfield(strlib, tug_conststr("trim"), tug_cfunc("trim", __tuglib_trim));
-	tug_setfield(strlib, tug_conststr("ltrim"), tug_cfunc("ltrim", __tuglib_ltrim));
-	tug_setfield(strlib, tug_conststr("rtrim"), tug_cfunc("rtrim", __tuglib_rtrim));
 	tug_setfield(strlib, tug_conststr("upper"), tug_cfunc("upper", __tuglib_upper));
 	tug_setfield(strlib, tug_conststr("lower"), tug_cfunc("lower", __tuglib_lower));
 	tug_setfield(strlib, tug_conststr("reverse"), tug_cfunc("reverse", __tuglib_reverse));
 	tug_setfield(strlib, tug_conststr("repeat"), tug_cfunc("repeat", __tuglib_repeat));
 	tug_setfield(strlib, tug_conststr("split"), tug_cfunc("split", __tuglib_split));
+	tug_setfield(strlib, tug_conststr("find"), tug_cfunc("find", __tuglib_str_find));
+	tug_setfield(strlib, tug_conststr("replace"), tug_cfunc("replace", __tuglib_str_replace));
 	tug_setglobal(T, "str", strlib);
 	
 	
