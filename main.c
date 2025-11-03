@@ -4,41 +4,54 @@
 #include "tuglib.h"
 
 static char* read_file(const char* path) {
-    FILE* file = fopen(path, "r");
-    if (!file) return NULL;
+	FILE* file = fopen(path, "r");
+	if (!file) return NULL;
 
-    fseek(file, 0, SEEK_END);
-    long size = ftell(file);
-    rewind(file);
+	fseek(file, 0, SEEK_END);
+	long size = ftell(file);
+	rewind(file);
 
-    char* buf = malloc(size + 1);
-    fread(buf, size, 1, file);
-    buf[size] = '\0';
+	char* buf = malloc(size + 1);
+	fread(buf, size, 1, file);
+	buf[size] = '\0';
 
-    fclose(file);
-    return buf;
+	fclose(file);
+	return buf;
 }
 
 int main() {
-    tug_init();
+	tug_init();
 
-    char errmsg[2048];
-    char* code = read_file("main.tug");
-    tug_Task* task = tug_task("main.tug", code, errmsg);
-    free(code);
-    if (!task) {
-        printf("%s\n", errmsg);
-        tug_close();
-        return 1;
-    }
-    tuglib_loadlibs(task);
-    tug_resume(task);
-    
-    if (tug_getstate(task) == TUG_ERROR) {
-        const char* msg = tug_geterr(task);
-        printf("%s\n", msg);
-    }
+	char errmsg[2048];
+	char* code = read_file("main.tug");
+	tug_Task* task = tug_task("main.tug", code, errmsg);
+	free(code);
+	if (!task) {
+		printf("%s\n", errmsg);
+		tug_close();
+		return 1;
+	}
+	tuglib_loadlibs(task);
+	tug_resume(task);
+	
+	if (tug_getstate(task) == TUG_ERROR) {
+		const char* msg = tug_geterr(task);
+		printf("%s\n", msg);
+	}
+	
+	tug_Task* task2 = tug_task("main2.tug",
+		"print('Hello, im task2')",
+		errmsg
+	);
+	if (!task2) {
+		printf("%s\n", errmsg);
+		tug_close();
+		return 1;
+	}
+	tuglib_loadlibs(task2);
+	tug_resume(task2);
+	tug_resume(task);
 
-    tug_close();
-    return 0;
+	tug_close();
+	return 0;
 }

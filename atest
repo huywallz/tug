@@ -1,4 +1,4 @@
-gcc test.c -o test -g
+gcc test.c -o test -g -lunwind
 mv -f test $HOME
 chmod +x $HOME/test
 $HOME/test

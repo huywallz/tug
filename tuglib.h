@@ -782,6 +782,10 @@ static void __tuglib_unpack(tug_Task* T) {
 	tug_ret(T, tuple);
 }
 
+static void __tuglib_pause(tug_Task* T) {
+	tug_pause(T);
+}
+
 static void tuglib_loadbuiltins(tug_Task* T) {
 	tug_setglobal(T, "print", tug_cfunc("print", __tuglib_print));
 	tug_setglobal(T, "tostr", tug_cfunc("tostr", __tuglib_tostr));
@@ -796,6 +800,7 @@ static void tuglib_loadbuiltins(tug_Task* T) {
 	tug_setglobal(T, "rawget", tug_cfunc("rawget", __tuglib_rawget));
 	tug_setglobal(T, "rawset", tug_cfunc("rawset", __tuglib_rawset));
 	tug_setglobal(T, "clock", tug_cfunc("clock", __tuglib_clock));
+	tug_setglobal(T, "pause", tug_cfunc("pause", __tuglib_pause));
 
 	tug_Object* mathlib = tug_table();
 	tug_setfield(mathlib, tug_conststr("sin"), tug_cfunc("sin", __tuglib_sin));

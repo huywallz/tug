@@ -1593,6 +1593,7 @@ static void bc_free(Bytecode* bc) {
 	if (!bc) return;
 	bc->ref--;
 	if (bc->ref <= 0) {
+		printf("yo\n");
 		gc_free(bc->data);
 		gc_free(bc);
 	}
@@ -2163,9 +2164,10 @@ static void compile_node(Node* node) {
 		case FOR: {
 			Node_For* nfor = (Node_For*)node->data;
 
-			emit_closure(1);
 
 			compile_node(nfor->node);
+			
+			emit_closure(1);
 			emit_byte(OP_ITER);
 			emit_addr(nfor->ln);
 
@@ -2217,7 +2219,7 @@ typedef struct {
 void bcreader_init(BCReader* reader, Bytecode* bc, size_t scope) {
 	reader->bc = bc;
 	reader->ptr = 0;
-	reader->scope = 0;
+	reader->scope = scope;
 }
 
 uint8_t bcreader_byte(BCReader* reader) {
@@ -2266,9 +2268,9 @@ void bcreader_bc(BCReader* reader) {
 
 int bcreader_read(BCReader* reader) {
 	if (reader->ptr >= reader->bc->size) return 0;
-
+	
 	for (size_t i = 0; i < reader->scope; i++) {
-		printf("  ");
+		printf("\t");
 	}
 	printf("%zu ", reader->ptr);
 	uint8_t op = bcreader_byte(reader);
@@ -2293,8 +2295,6 @@ int bcreader_read(BCReader* reader) {
 		case OP_LT: 
 		case OP_GE:
 		case OP_LE: 
-		case OP_EQ:
-		case OP_NE:
 		case OP_POS:
 		case OP_NEG:
 		case OP_NOT:
@@ -2312,6 +2312,8 @@ int bcreader_read(BCReader* reader) {
 		case OP_PUSH_CLOSURE:
 		case OP_POP_CLOSURE:
 		case OP_TABLE:
+		case OP_EQ:
+		case OP_NE:
 		break;
 
 		case OP_POP:
@@ -2355,8 +2357,11 @@ int bcreader_read(BCReader* reader) {
 				}
 			}
 
-			size_t count = bcreader_addr(reader);
-			printf(" count:%zu\n", count);
+			size_t paramc = bcreader_addr(reader);
+			printf(" paramc:%zu\n", paramc);
+			for (size_t i = 0; i < paramc; i++) {
+				printf(" %s", bcreader_str(reader));
+			}
 			bcreader_bc(reader);
 		} break;
 
@@ -3416,7 +3421,9 @@ static Object* get_ret(Task* task) {
 static void gc_run(void);
 static void task_exec(Task* task) {
 	#define call_fobj(_obj, _args) call_obj(task, (_obj), (_args), 1, 0); if (!tuglib_iserr(task)) {task_exec(task); if (tuglib_iserr(task)) break;}
-	if (task->frame->bc == NULL) return;
+	if (task->frame->bc == NULL) {
+		return;
+	}
 
 	#if TUG_DEBUG
 	uint8_t prev_op = 255;
