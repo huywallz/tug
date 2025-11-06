@@ -35,7 +35,6 @@ extern tug_Object* tug_nil;
 tug_Object* tug_str(char* str);
 tug_Object* tug_conststr(const char* str);
 tug_Object* tug_num(double num);
-tug_Object* tug_table(void);
 
 typedef void(*tug_CFunc)(tug_Task*);
 tug_Object* tug_cfunc(const char* name, tug_CFunc func);
@@ -60,6 +59,12 @@ double tug_getnum(tug_Object* obj);
 void tug_setfield(tug_Object* obj, tug_Object* key, tug_Object* value);
 tug_Object* tug_getfield(tug_Object* obj, tug_Object* key);
 size_t tug_getlen(tug_Object* obj);
+
+typedef void (*tug_deallocator)(tug_Object* table);
+tug_Object* tug_table(void);
+void tug_setuserdata(tug_Object* table, void* userdata);
+void* tug_getuserdata(tug_Object* table);
+void tug_setdeallocator(tug_Object* table, tug_deallocator deallocator);
 void tug_setmetatable(tug_Object* obj, tug_Object* metatable);
 tug_Object* tug_getmetatable(tug_Object* obj);
 

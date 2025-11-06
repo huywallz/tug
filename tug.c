@@ -2475,8 +2475,9 @@ typedef struct tug_Object {
 		} func;
 		Vector* tuple;
 		struct {
-			struct Table* table;
 			void* userdata;
+			tug_deallocator dealloc;
+			struct Table* table;
 			struct tug_Object* metatable;
 		};
 		struct {
@@ -2619,7 +2620,10 @@ static void obj_free(Object* obj) {
 		} break;
 		case LIST: vec_free(obj->list); break;
 		case TUPLE: vec_free(obj->tuple); break;
-		case TABLE: table_free(obj->table); break;
+		case TABLE: {
+			obj->deallocate(obj);
+			table_free(obj->table);
+		} break;
 	}
 	
 	if (obj_poolc < OBJ_POOL_LIMIT) {
@@ -4495,6 +4499,18 @@ tug_Object* tug_num(double num) {
 
 tug_Object* tug_table(void) {
 	return new_table();
+}
+
+void tug_setuserdata(tug_Object* table, void* userdata) {
+	table->userdata = userdata;
+}
+
+void tug_setdeallocator(tug_Object* table, tug_deallocator deallocator) {
+	table->deallocator = deallocator;
+}
+
+void* tug_getuserdata(tug_Object* table) {
+	return table->userdata;
 }
 
 tug_Object* tug_cfunc(const char* name, tug_CFunc func) {
