@@ -134,6 +134,7 @@ enum {
 	TUPLE, TABLE, INDEX, SETINDEX,
 	ITER_STR, ITER_TABLE,
 	LIST, ITER_LIST,
+	USERDATA,
 };
 
 typedef struct Node Node;
@@ -363,6 +364,7 @@ static void vec_clearpool(void) {
 		Vector* vec = vec_pool[i];
 		gc_free(vec->array);
 		gc_free(vec);
+		vec_pool[i] = NULL;
 	}
 	vec_poolc = 0;
 }
@@ -395,27 +397,24 @@ static Vector* vec_create() {
 	return vec_serve(64);
 }
 
-static void vec_dynamic(Vector* vec) {
-	if (vec->count >= vec->capacity) {
+static void vec_dynamic(Vector* vec, int inc) {
+	if (inc && vec->count >= vec->capacity) {
 		vec->capacity *= 2;
 		vec->array = gc_realloc(vec->array, vec->capacity * sizeof(void*));
-	} else if (vec->count < vec->capacity / 4 && vec->capacity > 8) {
-		vec->capacity /= 2;
+	} else if (!inc && vec->count < vec->capacity / 4 && vec->capacity > 8) {
+		vec->capacity /= 4;
 		vec->array = gc_realloc(vec->array, vec->capacity * sizeof(void*));
 	}
 }
 
 static void vec_push(Vector* vec, void* obj) {
-	vec_dynamic(vec);
+	vec_dynamic(vec, 1);
 	vec->array[vec->count++] = obj;
 }
 
 static void vec_pushfirst(Vector* vec, void* obj) {
-	if (vec->count >= vec->capacity) {
-		vec->capacity *= 2;
-		vec->array = gc_realloc(vec->array, vec->capacity * sizeof(void*));
-	}
-
+	vec_dynamic(vec, 1);
+	
 	memmove(&vec->array[1], &vec->array[0], vec->count * sizeof(void*));
 	vec->array[0] = obj;
 	vec->count++;
@@ -424,22 +423,20 @@ static void vec_pushfirst(Vector* vec, void* obj) {
 static void* vec_pop(Vector* vec) {
 	if (vec->count == 0) return NULL;
 	void* res = vec->array[--vec->count];
-	vec_dynamic(vec);
+	vec_dynamic(vec, 0);
 
 	return res;
 }
 
 static void* vec_popfirst(Vector* vec) {
 	if (vec->count == 0) return NULL;
+	else if (vec->count == 1) return vec_pop(vec);
 	void* res = vec->array[0];
 
 	memmove(&vec->array[0], &vec->array[1], (vec->count - 1) * sizeof(void*));
 	vec->count--;
 
-	if (vec->count < vec->capacity / 4 && vec->capacity > 8) {
-		vec->capacity /= 4;
-		vec->array = gc_realloc(vec->array, vec->capacity * sizeof(void*));
-	}
+	vec_dynamic(vec, 0);
 	return res;
 }
 
@@ -1593,7 +1590,6 @@ static void bc_free(Bytecode* bc) {
 	if (!bc) return;
 	bc->ref--;
 	if (bc->ref <= 0) {
-		printf("yo\n");
 		gc_free(bc->data);
 		gc_free(bc);
 	}
@@ -2164,7 +2160,6 @@ static void compile_node(Node* node) {
 		case FOR: {
 			Node_For* nfor = (Node_For*)node->data;
 
-
 			compile_node(nfor->node);
 			
 			emit_closure(1);
@@ -2446,12 +2441,14 @@ static Bytecode* gen_bc(const char* src, const char* text, char* errmsg) {
 	emit_byte(OP_HALT);
 
 	#if TUG_DEBUG
+	/*
 
 	BCReader R;
 	bcreader_init(&R, bc, 0);
 	while (bcreader_read(&R));
 	printf("\n");
 
+	*/
 	#endif
 
 	return bc;
@@ -2479,6 +2476,7 @@ typedef struct tug_Object {
 		Vector* tuple;
 		struct {
 			struct Table* table;
+			void* userdata;
 			struct tug_Object* metatable;
 		};
 		struct {
@@ -2599,6 +2597,7 @@ static Object* obj_table(struct Table* table) {
 	Object* obj = obj_create(TABLE);
 	obj->table = table;
 	obj->metatable = obj_nil;
+	obj->userdata = NULL;
 
 	return obj;
 }
@@ -3398,7 +3397,7 @@ void call_obj(Task* task, Object* obj, Vector* args, int f, int protected) {
 			obj->func.cfunc(task);
 		}
 
-		if (task->state == TASK_RUNNING) {
+		if (task->state != TASK_ERROR) {
 			push_obj(task, task->frame->ret);
 
 			Frame* next_frame = task->frame->next;
@@ -4057,9 +4056,8 @@ static void task_exec(Task* task) {
 						Vector* args = vec_serve(1);
 						vec_push(args, obj);
 
-						Object* args_obj = obj_create(TUPLE);
+						Object* args_obj = gc_obj(obj_create(TUPLE));
 						args_obj->tuple = args;
-						gc_collect_obj(args_obj);
 
 						obj = tug_call(task, func, args_obj);
 						meta = 1;
@@ -4545,7 +4543,7 @@ tug_Object* tug_listpop(tug_Object* list, size_t idx) {
 	Object* obj = lvec->array[idx];
 	memmove(&lvec->array[idx], &lvec->array[idx + 1], (lvec->count - idx - 1) * sizeof(void*));
 	lvec->count--;
-	vec_dynamic(lvec);
+	vec_dynamic(lvec, 0);
 	return obj;
 }
 
@@ -4556,7 +4554,7 @@ void tug_listinsert(tug_Object* list, size_t idx, tug_Object* obj) {
 		return;
 	}
 	
-	vec_dynamic(lvec);
+	vec_dynamic(lvec, 1);
 	memmove(&lvec->array[idx + 1], &lvec->array[idx], (lvec->count - idx) * sizeof(void*));
 	lvec->array[idx] = obj;
 	lvec->count++;
@@ -4718,6 +4716,7 @@ tug_Object* tug_call(tug_Task* T, tug_Object* func, tug_Object* arg) {
 	Vector* args;
 	if (arg->kind == TUPLE) {
 		args = arg->tuple;
+		arg->tuple = NULL;
 	} else {
 		args = vec_serve(1);
 		vec_push(args, arg);

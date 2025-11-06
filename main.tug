@@ -1,3 +1,3 @@
-print("Hello, World!")
-pause()
-print("Im back!")
+print(math.pi)
+print(math.inf)
+print(math.nan)
